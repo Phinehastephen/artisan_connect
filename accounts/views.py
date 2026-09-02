@@ -1,4 +1,19 @@
-from django.shortcuts import render
+from django.db.migrations import serializer
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.core.exceptions import ValidationError
+
+from .models import User
+from .serializers import UserSerializer
+
+
+class AccountCreateAPIView(APIView):
+    def post(self, request, *args, **kwargs):
+        
+        serializer = UserSerializer(data=request.data)
+        
+        
 
 # Create your views here.
 

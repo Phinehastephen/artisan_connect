@@ -4,5 +4,7 @@ from .views import ArtisanListView
 
 
 urlpatterns = [
-    path("", ArtisanListView.as_view(), name="artisan-list"),
+    path("artisan", ArtisanListView.as_view(), name="artisan-list"),
 ]
+
+# api/v1/artisans/artisan

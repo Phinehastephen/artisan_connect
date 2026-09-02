@@ -4,5 +4,7 @@ from .views import ServiceListView
 
 
 urlpatterns = [
-    path("", ServiceListView.as_view(), name="service-list"),
+    path("service", ServiceListView.as_view(), name="service-list"),
 ]
+
+# api/v1/services/service

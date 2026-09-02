@@ -14,18 +14,24 @@ class Booking(models.Model):
         "customers.Customer",
         on_delete=models.PROTECT,
         related_name="bookings",
+        null=True,
+        blank=True,
     )
 
     artisan = models.ForeignKey(
         "artisans.Artisan",
         on_delete=models.PROTECT,
         related_name="bookings",
+        null=True,
+        blank=True,
     )
 
     service = models.ForeignKey(
         "services.Service",
         on_delete=models.PROTECT,
         related_name="bookings",
+        null=True,
+        blank=True,
     )
 
     job_address = models.CharField(

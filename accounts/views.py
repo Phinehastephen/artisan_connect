@@ -1,17 +1,56 @@
-from django.db.migrations import serializer
-from rest_framework import generics, status
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.core.exceptions import ValidationError
 
-from .models import User
-from .serializers import UserSerializer
+from .serializers import (
+    UserSerializer,
+    CustomerRegisterSerializer,
+    ArtisanRegisterSerializer,
+)
 
 
-class AccountCreateAPIView(APIView):
+class CustomerRegisterAPIView(APIView):
+
     def post(self, request, *args, **kwargs):
-        
-        serializer = UserSerializer(data=request.data)
+
+        serializer = CustomerRegisterSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+            user = serializer.save()
+
+            return Response(
+                UserSerializer(user).data,
+                status=status.HTTP_201_CREATED
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class ArtisanRegisterAPIView(APIView):
+
+    def post(self, request, *args, **kwargs):
+
+        serializer = ArtisanRegisterSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+            user = serializer.save()
+
+            return Response(
+                UserSerializer(user).data,
+                status=status.HTTP_201_CREATED
+            )
+
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
         
         
 

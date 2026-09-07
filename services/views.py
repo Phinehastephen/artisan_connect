@@ -5,8 +5,12 @@ from rest_framework.views import APIView
 from .models import Service
 from .serializers import ServiceSerializer
 
+from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+
 
 class ServiceListView(APIView):
+    permission_classes =[IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         services = Service.objects.filter(is_active=True).order_by("name")

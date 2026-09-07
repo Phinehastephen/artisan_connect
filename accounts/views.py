@@ -2,6 +2,10 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from .serializers import CustomLoginSerializer
+
 from .serializers import (
     UserSerializer,
     CustomerRegisterSerializer,
@@ -10,6 +14,7 @@ from .serializers import (
 
 
 class CustomerRegisterAPIView(APIView):
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
 
@@ -32,7 +37,8 @@ class CustomerRegisterAPIView(APIView):
 
 
 class ArtisanRegisterAPIView(APIView):
-
+    permission_classes = [AllowAny]
+    
     def post(self, request, *args, **kwargs):
 
         serializer = ArtisanRegisterSerializer(
@@ -52,7 +58,15 @@ class ArtisanRegisterAPIView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
         
-        
+class CustomJWTLoginView(APIView):
+    permission_classes = [AllowAny] # Bypass global IsAuthenticated requirement
+
+    def post(self, request, *args, **kwargs):
+        serializer = CustomLoginSerializer(data=request.data)
+        if serializer.is_valid():
+            # Return tokens along with user info
+            return Response(serializer.validated_data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)    
 
 # Create your views here.
 

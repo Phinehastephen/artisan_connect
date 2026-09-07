@@ -2,6 +2,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.core.exceptions import ValidationError
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 
 from .models import Booking
 from .serializers import BookingSerializer
@@ -15,6 +17,8 @@ from .services import (
 
 
 class BookingListAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request, *args, **kwargs):
         bookings = Booking.objects.all().order_by("-created_at")
         serializer = BookingSerializer(bookings, many=True)
@@ -26,6 +30,8 @@ class BookingListAPIView(APIView):
 
 
 class BookCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, *args, **kwargs):
         serializer = BookingSerializer(data=request.data)
 
@@ -58,6 +64,8 @@ class BookCreateAPIView(APIView):
 
 
 class BookingDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request, pk, *args, **kwargs):
         try:
             booking = Booking.objects.get(pk=pk)
@@ -79,6 +87,7 @@ class BookingStatusActionView(APIView):
     """
     Handles state transitions for a booking based on the requested action.
     """
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, pk, action):
         try:

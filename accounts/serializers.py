@@ -2,7 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from services.models import Service
 from .models import User
 
 
@@ -65,11 +65,15 @@ class ArtisanRegisterSerializer(serializers.ModelSerializer):
         min_length=8,
         validators=[validate_password],
     )
-    
+
     phone_number = serializers.CharField(
-        max_length=20,
-        required=True,
-        )
+        max_length=20
+    )
+
+    services = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Service.objects.all(),
+    )
 
     class Meta:
         model = User
@@ -78,12 +82,25 @@ class ArtisanRegisterSerializer(serializers.ModelSerializer):
             "email",
             "full_name",
             "password",
-            "phone_number"
+            "phone_number",
+            "services",
         ]
+
+    def validate_services(self, services):
+        if len(services) > 3:
+            raise serializers.ValidationError(
+                "An artisan can select a maximum of 3 services."
+            )
+
+        if len(services) < 1:
+            raise serializers.ValidationError(
+                "An artisan must select at least 1 service."
+            )
+
+        return services
 
     def create(self, validated_data):
         from .services import register_artisan
-
         return register_artisan(validated_data)
     
     

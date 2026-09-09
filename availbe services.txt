@@ -1,0 +1,16 @@
+from services.models import Service
+
+services_list = [
+    "Plumbing",
+    "Electrical",
+    "Carpentry",
+    "Cleaning",
+    "Painting",
+    "Tailoring",
+    "Auto Repair"
+]
+
+for name in services_list:
+    Service.objects.get_or_create(name=name)
+
+print("Services created successfully!")

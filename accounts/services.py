@@ -30,6 +30,7 @@ def register_customer(validated_data):
 def register_artisan(validated_data):
     phone_number = validated_data.pop("phone_number")
     password = validated_data.pop("password")
+    services = validated_data.pop("services")
 
     user = User(
         **validated_data,
@@ -39,9 +40,11 @@ def register_artisan(validated_data):
     user.set_password(password)
     user.save()
 
-    Artisan.objects.create(
+    artisan = Artisan.objects.create(
         user=user,
         phone_number=phone_number,
     )
+
+    artisan.services.set(services)
 
     return user

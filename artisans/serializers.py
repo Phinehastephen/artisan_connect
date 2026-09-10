@@ -10,7 +10,6 @@ class ArtisanSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "user",
-            "phone_number",
             "business_name",
             "verification_status",
             "starting_price",

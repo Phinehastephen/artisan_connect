@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 
 from .models import Artisan
 from .serializers import ArtisanSerializer
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from .services import approve_artisan, reject_artisan
 # from .serializers import CustomLoginSerializer
 
@@ -24,10 +24,7 @@ class ArtisanVerificationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk, action):
-        # Checks if the logged-in user is an admin      
-        all_artisans = Artisan.objects.all()
-        for art in all_artisans:
-            print(f"Artisan ID: {art.id}, Verification Status: {art.verification_status}")
+        # Checks if the logged-in user is an admin
         if request.user.role != "ADMIN":
             return Response(
                 {"detail": "Only admins can approve or reject artisans."},

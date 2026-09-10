@@ -1,6 +1,11 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from django.core.exceptions import ValidationError
+from django.db import transaction
+
+from .models import Artisan
+
 
 MAX_ARTISAN_SERVICES = 3
 
@@ -24,4 +29,16 @@ def add_service_to_artisan(artisan, service):
 
     artisan.services.add(service)
 
+    return artisan
+
+
+def approve_artisan(artisan):
+    artisan.verification_status = Artisan.VerificationStatus.VERIFIED
+    artisan.save(update_fields=["verification_status"])
+    return artisan
+
+
+def reject_artisan(artisan):
+    artisan.verification_status = Artisan.VerificationStatus.REJECTED
+    artisan.save(update_fields=["verification_status"])
     return artisan

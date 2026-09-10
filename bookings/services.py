@@ -3,24 +3,26 @@ from django.db import transaction
 from django.utils import timezone
 from .models import Booking
 
-@transaction.atomic
-def create_booking(customer, artisan, service, job_address, job_latitude, job_longitude):
-    """
-    Creates a new booking after verifying the artisan provides the selected service.
-    """
-    if not artisan.services.filter(id=service.id).exists():
-        raise ValidationError("This artisan does not provide the selected service.")
-        
-    booking = Booking.objects.create(
-        customer=customer,
-        artisan=artisan,
-        service=service,
-        job_address=job_address,
-        job_latitude=job_latitude,
-        job_longitude=job_longitude,
-        status=Booking.Status.PENDING,
-    )
-    return booking
+# Superseded by the create_booking below (which also checks verification_status).
+# Kept commented out for reference rather than deleted.
+# @transaction.atomic
+# def create_booking(customer, artisan, service, job_address, job_latitude, job_longitude):
+#     """
+#     Creates a new booking after verifying the artisan provides the selected service.
+#     """
+#     if not artisan.services.filter(id=service.id).exists():
+#         raise ValidationError("This artisan does not provide the selected service.")
+#
+#     booking = Booking.objects.create(
+#         customer=customer,
+#         artisan=artisan,
+#         service=service,
+#         job_address=job_address,
+#         job_latitude=job_latitude,
+#         job_longitude=job_longitude,
+#         status=Booking.Status.PENDING,
+#     )
+#     return booking
 
 
 @transaction.atomic

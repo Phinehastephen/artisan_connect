@@ -14,6 +14,8 @@ from .services import (
     start_booking,
     complete_booking,
     finalize_booking,
+    reject_booking,
+    cancel_booking,
 )
 
 
@@ -219,3 +221,66 @@ class BookingBusinessLogicTests(TestCase):
 
         with self.assertRaises(ValidationError):
             finalize_booking(booking)
+
+    def test_pending_booking_can_be_rejected(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+
+        booking = reject_booking(booking)
+
+        self.assertEqual(
+            booking.status,
+            Booking.Status.CANCELLED,
+        )
+
+    def test_accepted_booking_cannot_be_rejected(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+
+        booking = accept_booking(booking)
+
+        with self.assertRaises(ValidationError):
+            reject_booking(booking)
+
+    def test_accepted_booking_can_be_cancelled(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+
+        booking = accept_booking(booking)
+        booking = cancel_booking(booking)
+
+        self.assertEqual(
+            booking.status,
+            Booking.Status.CANCELLED,
+        )
+
+    def test_pending_booking_cannot_be_cancelled(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+
+        with self.assertRaises(ValidationError):
+            cancel_booking(booking)

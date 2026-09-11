@@ -5,7 +5,9 @@ from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+from accounts.permissions import IsCustomer, IsArtisan
 from .models import Booking
+from .permissions import IsBookingCustomer, IsBookingArtisan
 from .serializers import BookingSerializer
 from .services import (
     create_booking,
@@ -13,6 +15,8 @@ from .services import (
     start_booking,
     complete_booking,
     finalize_booking,
+    reject_booking,
+    cancel_booking,
 )
 
 
@@ -30,7 +34,7 @@ class BookingListAPIView(APIView):
 
 
 class BookCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def post(self, request, *args, **kwargs):
         serializer = BookingSerializer(data=request.data)
@@ -86,8 +90,15 @@ class BookingDetailView(APIView):
 class BookingStatusActionView(APIView):
     """
     Handles state transitions for a booking based on the requested action.
+
+    "finalize" is intentionally left open to any authenticated user involved
+    in the booking's lifecycle rather than gated to a single role, since the
+    project has not yet decided who is responsible for triggering it.
     """
     permission_classes = [IsAuthenticated]
+
+    ARTISAN_ACTIONS = {"accept", "start", "complete", "reject"}
+    CUSTOMER_ACTIONS = {"cancel"}
 
     def post(self, request, pk, action):
         try:
@@ -103,12 +114,32 @@ class BookingStatusActionView(APIView):
             "start": start_booking,
             "complete": complete_booking,
             "finalize": finalize_booking,
+            "reject": reject_booking,
+            "cancel": cancel_booking,
         }
 
         if action not in action_map:
             return Response(
                 {"error": f"Invalid action: '{action}'"},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if action in self.ARTISAN_ACTIONS and not (
+            IsArtisan().has_permission(request, self)
+            and IsBookingArtisan().has_object_permission(request, self, booking)
+        ):
+            return Response(
+                {"error": "Only the artisan on this booking can perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if action in self.CUSTOMER_ACTIONS and not (
+            IsCustomer().has_permission(request, self)
+            and IsBookingCustomer().has_object_permission(request, self, booking)
+        ):
+            return Response(
+                {"error": "Only the customer on this booking can perform this action."},
+                status=status.HTTP_403_FORBIDDEN
             )
 
         try:

@@ -3,6 +3,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsCustomer
 from .models import SavedLocation
 from .serializers import SavedLocationSerializer
 from .services import create_saved_location
@@ -12,7 +13,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 
 
 class SavedLocationListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
     
     def get(self, request, *args, **kwargs):
         saved_locations = SavedLocation.objects.all().order_by("-id")
@@ -47,7 +48,7 @@ class SavedLocationDetailView(APIView):
     GET: Retrieve details of a specific saved location.
     DELETE: Delete a specific saved location.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def get(self, request, pk, *args, **kwargs):
         try:

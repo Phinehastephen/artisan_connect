@@ -67,6 +67,32 @@ def complete_booking(booking):
 
 
 @transaction.atomic
+def reject_booking(booking):
+    """
+    Artisan declines a pending booking request.
+    """
+    if booking.status != Booking.Status.PENDING:
+        raise ValidationError("Only pending bookings can be rejected.")
+
+    booking.status = Booking.Status.CANCELLED
+    booking.save(update_fields=["status"])
+    return booking
+
+
+@transaction.atomic
+def cancel_booking(booking):
+    """
+    Customer cancels a booking that has already been accepted.
+    """
+    if booking.status != Booking.Status.ACCEPTED:
+        raise ValidationError("Only accepted bookings can be cancelled.")
+
+    booking.status = Booking.Status.CANCELLED
+    booking.save(update_fields=["status"])
+    return booking
+
+
+@transaction.atomic
 def finalize_booking(booking):
     """
     Transitions booking status from COMPLETED to FINALIZED and strips precise location details for privacy.

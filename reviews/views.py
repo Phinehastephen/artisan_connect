@@ -3,6 +3,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.permissions import IsCustomer
 from .models import Review
 from .serializers import ReviewSerializer
 from .services import create_review, edit_review
@@ -11,8 +12,11 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
 class ReviewListCreateView(APIView):
-    permission_classes =[IsAuthenticated]
-        
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsAuthenticated(), IsCustomer()]
+        return [IsAuthenticated()]
+
     def get(self, request, *args, **kwargs):
         reviews = Review.objects.all().order_by("-created_at")
         serializer = ReviewSerializer(reviews, many=True)
@@ -41,7 +45,11 @@ class ReviewListCreateView(APIView):
 
 
 class ReviewDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    def get_permissions(self):
+        if self.request.method == "PUT":
+            return [IsAuthenticated(), IsCustomer()]
+        return [IsAuthenticated()]
+
     def get(self, request, pk, *args, **kwargs):
         try:
             review = Review.objects.get(pk=pk)

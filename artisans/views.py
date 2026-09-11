@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from .models import Artisan
 from .serializers import ArtisanSerializer
 from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsAdmin
 from .services import approve_artisan, reject_artisan
 # from .serializers import CustomLoginSerializer
 
@@ -21,16 +22,9 @@ class ArtisanListView(APIView):
     
     
 class ArtisanVerificationAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request, pk, action):
-        # Checks if the logged-in user is an admin
-        if request.user.role != "ADMIN":
-            return Response(
-                {"detail": "Only admins can approve or reject artisans."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
         try:
             artisan = Artisan.objects.get(pk=pk)
         except Artisan.DoesNotExist:
@@ -74,18 +68,27 @@ class ArtisanVerificationAPIView(APIView):
         
 
 class PendingArtisanListAPIView(APIView):
-    permission_classes = [IsAuthenticated]  # Adjust permissions as needed
+    permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        # Only admins can view pending artisans
-        if request.user.role != "ADMIN":
-            return Response(
-                {"detail": "Only admins can view pending artisans."},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
         artisans = Artisan.objects.filter(
             verification_status=Artisan.VerificationStatus.PENDING
+        ).order_by("-created_at")
+
+        serializer = ArtisanSerializer(artisans, many=True)
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+
+class RejectedArtisanListAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get(self, request):
+        artisans = Artisan.objects.filter(
+            verification_status=Artisan.VerificationStatus.REJECTED
         ).order_by("-created_at")
 
         serializer = ArtisanSerializer(artisans, many=True)

@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from services.models import Service
 from .models import User
-
+from artisans.models import Artisan
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -116,12 +116,30 @@ class CustomLoginSerializer(serializers.Serializer):
         user = authenticate(username=username, password=password)
 
         if not user:
-            raise serializers.ValidationError("Invalid username or password.")
-        
-        if not user.is_active:
-            raise serializers.ValidationError("This account is disabled.")
+            raise serializers.ValidationError(
+                "Invalid username or password."
+            )
 
-        # Generate JWT tokens manually
+        if not user.is_active:
+            raise serializers.ValidationError(
+                "This account is disabled."
+            )
+
+        if user.role == user.Role.ARTISAN:
+            artisan = user.artisan_profile
+
+            if artisan.verification_status == Artisan.VerificationStatus.PENDING:
+                raise serializers.ValidationError(
+                    "Your artisan account is currently under review. "
+                    "You will be able to log in once your account has been approved."
+                )
+
+            if artisan.verification_status == Artisan.VerificationStatus.REJECTED:
+                raise serializers.ValidationError(
+                    "Your artisan account has been rejected. "
+                    "Please contact the administrator for more information."
+                )
+
         refresh = RefreshToken.for_user(user)
 
         return {

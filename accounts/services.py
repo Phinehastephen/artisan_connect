@@ -3,6 +3,7 @@ from django.db import transaction
 from .models import User
 from customers.models import Customer
 from artisans.models import Artisan
+from artisans.services import recalculate_artisan_price_range
 
 
 @transaction.atomic
@@ -46,5 +47,6 @@ def register_artisan(validated_data):
     )
 
     artisan.services.set(services)
+    recalculate_artisan_price_range(artisan)
 
     return user

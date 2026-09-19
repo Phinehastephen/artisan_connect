@@ -22,6 +22,11 @@ class Artisan(models.Model):
         null=True,
     )
 
+    business_name_updated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     verification_status = models.CharField(
         max_length=20,
         choices=VerificationStatus.choices,

@@ -6,6 +6,8 @@ from services.models import Service
 
 from .models import User
 from .services import register_customer, register_artisan
+from .permissions import IsCustomer, IsArtisan, IsAdmin
+from rest_framework.test import APIRequestFactory
 
 
 class AccountsBusinessLogicTests(TestCase):
@@ -17,6 +19,8 @@ class AccountsBusinessLogicTests(TestCase):
             service = Service.objects.create(
                 name=f"Service {number}",
                 description=f"Test service {number}",
+                minimum_price=1000,
+                maximum_price=5000,
                 is_active=True,
             )
 
@@ -99,4 +103,94 @@ class AccountsBusinessLogicTests(TestCase):
         self.assertEqual(
             artisan.verification_status,
             Artisan.VerificationStatus.PENDING,
+        )
+
+
+class RolePermissionTests(TestCase):
+
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+        self.customer = User.objects.create_user(
+            username="testcustomer",
+            email="customer@test.com",
+            password="TestPassword123!",
+            full_name="Test Customer",
+            role=User.Role.CUSTOMER,
+        )
+
+        self.artisan = User.objects.create_user(
+            username="testartisan",
+            email="artisan@test.com",
+            password="TestPassword123!",
+            full_name="Test Artisan",
+            role=User.Role.ARTISAN,
+        )
+
+        self.admin = User.objects.create_user(
+            username="testadmin",
+            email="admin@test.com",
+            password="TestPassword123!",
+            full_name="Test Admin",
+            role=User.Role.ADMIN,
+        )
+
+    def test_customer_permission(self):
+        request = self.factory.get("/")
+        request.user = self.customer
+
+        permission = IsCustomer()
+
+        self.assertTrue(
+            permission.has_permission(request, None)
+        )
+
+    def test_artisan_permission(self):
+        request = self.factory.get("/")
+        request.user = self.artisan
+
+        permission = IsArtisan()
+
+        self.assertTrue(
+            permission.has_permission(request, None)
+        )
+
+    def test_admin_permission(self):
+        request = self.factory.get("/")
+        request.user = self.admin
+
+        permission = IsAdmin()
+
+        self.assertTrue(
+            permission.has_permission(request, None)
+        )
+
+    def test_customer_cannot_use_artisan_permission(self):
+        request = self.factory.get("/")
+        request.user = self.customer
+
+        permission = IsArtisan()
+
+        self.assertFalse(
+            permission.has_permission(request, None)
+        )
+
+    def test_artisan_cannot_use_admin_permission(self):
+        request = self.factory.get("/")
+        request.user = self.artisan
+
+        permission = IsAdmin()
+
+        self.assertFalse(
+            permission.has_permission(request, None)
+        )
+
+    def test_admin_cannot_use_customer_permission(self):
+        request = self.factory.get("/")
+        request.user = self.admin
+
+        permission = IsCustomer()
+
+        self.assertFalse(
+            permission.has_permission(request, None)
         )

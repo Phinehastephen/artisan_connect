@@ -4,16 +4,16 @@ from rest_framework.views import APIView
 
 from .models import Customer
 from .serializers import CustomerSerializer
-from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsCustomer
 
 
 class CustomerDetailView(APIView):
-    permission_classes= [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
-    def get(self, request, pk,):
+    def get(self, request):
         try:
-            customer = Customer.objects.get(pk=pk)
+            customer = request.user.customer_profile
         except Customer.DoesNotExist:
             return Response(
                 {"error": "Customer not found."},

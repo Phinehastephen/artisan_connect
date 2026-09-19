@@ -1,10 +1,10 @@
 from django.urls import path
 
-from .views import ServiceListView
+from .views import ServiceListCreateAPIView
 
 
 urlpatterns = [
-    path("service", ServiceListView.as_view(), name="service-list"),
+    path("service", ServiceListCreateAPIView.as_view(), name="service-list"),
 ]
 
 # api/v1/services/service

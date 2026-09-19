@@ -42,6 +42,8 @@ class ReviewBusinessLogicTests(TestCase):
         self.service = Service.objects.create(
             name="Plumbing",
             description="General plumbing services",
+            minimum_price=1000,
+            maximum_price=5000,
             is_active=True,
         )
 

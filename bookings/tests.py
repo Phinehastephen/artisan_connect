@@ -47,6 +47,8 @@ class BookingBusinessLogicTests(TestCase):
         self.service = Service.objects.create(
             name="Plumbing",
             description="General plumbing services",
+            minimum_price=1000,
+            maximum_price=5000,
             is_active=True,
         )
 
@@ -100,6 +102,8 @@ class BookingBusinessLogicTests(TestCase):
         electrical = Service.objects.create(
             name="Electrical",
             description="Electrical services",
+            minimum_price=1000,
+            maximum_price=5000,
             is_active=True,
         )
 

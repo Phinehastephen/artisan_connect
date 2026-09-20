@@ -188,6 +188,45 @@ Higher-level administrative capabilities, such as advanced moderation and custom
 
 ---
 
+## 🔁 Service Change Requests
+
+An artisan's services are not freely editable once set. Selecting services is a two-stage flow: an initial selection at registration, and a controlled **Service Change Request** for any change after that.
+
+```text
+Artisan
+   ↓
+Select 1–3 existing services
+   ↓
+Initial services
+   ↓
+[Later] Want to change services?
+   ↓
+Submit Service Change Request
+   ↓
+Give reason
+   ↓
+Admin reviews
+   ↓
+Approve / Reject
+   ↓
+If approved → services updated
+   ↓
+12-month waiting period
+```
+
+Key rules:
+
+- An artisan selects 1–3 services at registration; this becomes their initial service list.
+- Changing services afterward is never a direct profile edit — it must go through a **Service Change Request**.
+- Every request must include a reason for the requested change.
+- An admin reviews each request and either approves or rejects it.
+- If approved, the artisan's services are updated and the artisan enters a **12-month waiting period** before another Service Change Request can be submitted.
+- This prevents frequent switching that would undermine the artisan's price/service history and customer trust.
+
+**Status:** documented business rule, not yet implemented in the backend (no `ServiceChangeRequest` model/table exists yet). See the Current Status table.
+
+---
+
 ## 📍 Location-Based Discovery
 
 Location is a core part of Artisan Connect.
@@ -229,6 +268,18 @@ Reviews are tied to completed work rather than being freely submitted against an
 - Reviews are associated with the relevant booking.
 - An artisan cannot review themselves.
 - Review editing is restricted according to the approved project rules.
+
+---
+
+## 🧩 Rules Established During Implementation
+
+The following rules were not part of the original SRS/design but were established while building the backend. They are now treated as approved, in effect the same as anything else in this document:
+
+- **Artisan profile fields have independent 6-month cooldowns.** `full_name`, `profile_picture`, and `business_name` can each be changed at most once every 6 months, tracked independently per field. `phone_number` and `default_location` have no cooldown.
+- **Only verified artisans can edit their profile.** An artisan with `PENDING` or `REJECTED` verification status cannot update any profile field until an admin approves them.
+- **An artisan's price range is a calculated value, never a direct input.** `starting_price` and `maximum_price` are derived automatically as the min/max across the artisan's currently assigned services, recalculated whenever the service list changes. This follows the "store facts, calculate values" principle above.
+- **Services enforce `minimum_price ≤ maximum_price`.** Both at the model level and in the API serializer.
+- **Artisan verification is a two-outcome review, not a multi-step pipeline.** An admin reviews a `PENDING` artisan and either approves or rejects them; only pending artisans can be acted on (an already verified/rejected artisan cannot be re-decided through this endpoint).
 
 ---
 
@@ -320,6 +371,9 @@ The following decisions are part of the project's approved architecture:
 - Customer suggestions for new service categories are postponed.
 - Date of birth is postponed to a later version.
 - Labour price estimation excludes material costs.
+- Artisan profile fields (`full_name`, `profile_picture`, `business_name`) each have an independent 6-month change cooldown.
+- An artisan's price range is always calculated from assigned services, never set directly.
+- Changing an artisan's services after registration requires an approved Service Change Request with a 12-month cooldown (see [Service Change Requests](#-service-change-requests)).
 
 ---
 
@@ -492,6 +546,7 @@ The exact structure may evolve as implementation progresses, but changes must re
 | Authentication Foundation | ✅ Complete |
 | Customer Module | ✅ Complete |
 | Service Management | 🔄 In Progress |
+| Service Change Requests | ⏳ Planned |
 | Booking | 🔄 Development |
 | Reviews & Ratings | 🔄 Development |
 | Location | ⏳ Planned |

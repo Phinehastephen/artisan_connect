@@ -10,6 +10,7 @@ Key non-obvious project conventions from the README worth internalizing:
 - **Frozen tables**: once a table/module is approved, it isn't casually redesigned. Check the README's "Important Architecture Decisions" section before changing model shapes.
 - Phone numbers are private (never exposed via API to other users); usernames are editable; multiple active sessions per user are supported by design.
 - Labour price estimation (planned AI feature) excludes material costs — a deliberate scope boundary, not an oversight.
+- **Service Change Request (planned, not yet implemented)**: an artisan's `services` M2M is meant to be editable only through a reviewed request flow, not a direct profile edit, once the initial 1–3 services are set at registration. Flow: artisan submits a request with a reason → admin approves/rejects → on approval, services update and the artisan enters a 12-month cooldown before requesting again. See README's "Service Change Requests" section. There is currently no `ServiceChangeRequest` model, service function, or endpoint — don't assume one exists, and route any future implementation through `artisans/services.py` per the layering rule below rather than letting `ArtisanProfileUpdateSerializer`/`update_artisan_profile` touch `services` directly.
 
 ## Commands
 
@@ -61,5 +62,10 @@ views.py (APIView)  →  serializers.py (validation/shape)  →  services.py (bu
 - An artisan may offer at most 3 services (`artisans/services.py: MAX_ARTISAN_SERVICES`), also re-validated at registration time in `accounts/serializers.py`.
 - A customer may have at most 5 saved locations (`locations/services.py: MAX_SAVED_LOCATIONS`).
 - A review can be edited exactly once, only by the reviewing customer, only within 24 hours of creation (`reviews/services.py: edit_review`).
+
+**Artisan profile updates** (`artisans/services.py: update_artisan_profile`, backing `ArtisanMyProfileView.patch`) — established while implementing the endpoint, not part of the original spec:
+- Only a `VERIFIED` artisan may update any profile field; `PENDING`/`REJECTED` artisans get a `ValidationError`.
+- `full_name` (on `User`), `profile_picture` (on `User`), and `business_name` (on `Artisan`) each have their own independent 6-month cooldown, tracked via a matching `*_updated_at` timestamp field. `phone_number` and `default_location` have no cooldown.
+- `starting_price`/`maximum_price` on `Artisan` are never accepted as input anywhere — they're recalculated by `recalculate_artisan_price_range` (min/max across assigned `services`) every time `add_service_to_artisan` runs. Treat them as derived/read-only in any new code path that touches services.
 
 **Auth**: JWT via `djangorestframework-simplejwt` (`rest_framework_simplejwt`), configured as the default DRF authentication class in `config/settings.py`. Login is a custom `CustomLoginSerializer`/`CustomJWTLoginView` (not simplejwt's built-in token view) so the response can be shaped with extra user fields; token refresh uses stock `TokenRefreshView`. There is no global `IsAuthenticated` default — each view sets `permission_classes` explicitly, so a missing/wrong `permission_classes` on a new view silently defaults to open access.

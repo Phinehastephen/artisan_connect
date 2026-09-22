@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+from accounts.models import User
 from accounts.permissions import IsCustomer, IsArtisan
 from .models import Booking
 from .permissions import IsBookingCustomer, IsBookingArtisan
@@ -22,9 +23,18 @@ from .services import (
 
 class BookingListAPIView(APIView):
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, *args, **kwargs):
-        bookings = Booking.objects.all().order_by("-created_at")
+        user = request.user
+
+        if user.role == User.Role.ADMIN:
+            bookings = Booking.objects.all()
+        elif user.role == User.Role.ARTISAN:
+            bookings = Booking.objects.filter(artisan__user=user)
+        else:
+            bookings = Booking.objects.filter(customer__user=user)
+
+        bookings = bookings.order_by("-created_at")
         serializer = BookingSerializer(bookings, many=True)
 
         return Response(
@@ -77,6 +87,17 @@ class BookingDetailView(APIView):
             return Response(
                 {"error": "Booking not found."},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+        is_party_to_booking = (
+            IsBookingCustomer().has_object_permission(request, self, booking)
+            or IsBookingArtisan().has_object_permission(request, self, booking)
+        )
+
+        if request.user.role != User.Role.ADMIN and not is_party_to_booking:
+            return Response(
+                {"error": "You do not have permission to view this booking."},
+                status=status.HTTP_403_FORBIDDEN
             )
 
         serializer = BookingSerializer(booking)

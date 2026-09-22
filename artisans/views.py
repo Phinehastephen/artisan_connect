@@ -9,6 +9,7 @@ from .models import Artisan
 from .serializers import (
     ArtisanProfileSerializer,
     ArtisanProfileUpdateSerializer,
+    ArtisanPublicSerializer,
     ArtisanSerializer,
 )
 from .services import approve_artisan, reject_artisan
@@ -21,7 +22,7 @@ class ArtisanListView(APIView):
         artisans = Artisan.objects.filter(
             verification_status=Artisan.VerificationStatus.VERIFIED
         ).order_by("-created_at")
-        serializer = ArtisanSerializer(artisans, many=True)
+        serializer = ArtisanPublicSerializer(artisans, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 

@@ -1,16 +1,18 @@
 from rest_framework import serializers
 from .models import Review
-from customers.serializers import CustomerSerializer
-from artisans.serializers import ArtisanSerializer
+from customers.serializers import CustomerPublicSerializer
+from artisans.serializers import ArtisanPublicSerializer
 from bookings.serializers import BookingSerializer
 
 
 class ReviewSerializer(serializers.ModelSerializer):
     """Serializer matching the exact Review model schema."""
 
-    # Read-only nested representations for GET response details
-    customer_detail = CustomerSerializer(source="customer", read_only=True)
-    artisan_detail = ArtisanSerializer(source="artisan", read_only=True)
+    # Read-only nested representations for GET response details. Reviews are
+    # publicly readable (reputation-building), so these use the "public"
+    # customer/artisan serializers (no phone_number).
+    customer_detail = CustomerPublicSerializer(source="customer", read_only=True)
+    artisan_detail = ArtisanPublicSerializer(source="artisan", read_only=True)
     booking_detail = BookingSerializer(source="booking", read_only=True)
 
     class Meta:

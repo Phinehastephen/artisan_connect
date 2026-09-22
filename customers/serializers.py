@@ -22,3 +22,22 @@ class CustomerSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+
+class CustomerPublicSerializer(serializers.ModelSerializer):
+    """Customer representation for other users (nested booking detail).
+    Excludes phone_number so artisans and customers can never reach each
+    other outside the app."""
+
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Customer
+        fields = [
+            "id",
+            "user",
+            "default_location",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+

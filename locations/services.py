@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -20,10 +22,15 @@ def create_saved_location(
             "A customer can save a maximum of 5 locations."
         )
 
-    return SavedLocation.objects.create(
+    saved_location = SavedLocation(
         customer=customer,
         name=name,
         address=address,
-        latitude=latitude,
-        longitude=longitude,
+        latitude=Decimal(str(latitude)),
+        longitude=Decimal(str(longitude)),
     )
+
+    saved_location.full_clean()
+    saved_location.save()
+
+    return saved_location

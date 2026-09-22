@@ -280,6 +280,8 @@ The following rules were not part of the original SRS/design but were establishe
 - **An artisan's price range is a calculated value, never a direct input.** `starting_price` and `maximum_price` are derived automatically as the min/max across the artisan's currently assigned services, recalculated whenever the service list changes. This follows the "store facts, calculate values" principle above.
 - **Services enforce `minimum_price ≤ maximum_price`.** Both at the model level and in the API serializer.
 - **Artisan verification is a two-outcome review, not a multi-step pipeline.** An admin reviews a `PENDING` artisan and either approves or rejects them; only pending artisans can be acted on (an already verified/rejected artisan cannot be re-decided through this endpoint).
+- **Phone numbers are never exposed between a customer and an artisan, in either direction.** This was already an approved decision (see "Phone numbers remain private" above) but wasn't actually enforced everywhere it needed to be — the artisan/customer detail nested inside a booking or review, and the public artisan marketplace listing, were all leaking `phone_number` before this was corrected. Customers and artisans are only meant to reach each other through the application itself.
+- **Viewing a booking is restricted to its own customer, its own artisan, or an admin.** Listing and fetching-by-id were previously open to any authenticated user; this has been corrected to match the "view only your own data" principle already applied elsewhere (saved locations, artisan profile).
 
 ---
 

@@ -33,6 +33,30 @@ class ArtisanSerializer(serializers.ModelSerializer):
         ]
 
 
+class ArtisanPublicSerializer(serializers.ModelSerializer):
+    """Artisan representation for other users (marketplace listing, nested
+    booking detail). Excludes phone_number so customers and artisans can
+    never reach each other outside the app."""
+
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Artisan
+        fields = [
+            "id",
+            "user",
+            "business_name",
+            "verification_status",
+            "starting_price",
+            "maximum_price",
+            "default_location",
+            "services",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
 class ArtisanProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
 

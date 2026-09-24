@@ -120,6 +120,20 @@ class ArtisanProfileUpdateSerializer(serializers.Serializer):
         max_length=255
     )
 
+    latitude = serializers.DecimalField(
+        required=False,
+        allow_null=True,
+        max_digits=9,
+        decimal_places=6,
+    )
+
+    longitude = serializers.DecimalField(
+        required=False,
+        allow_null=True,
+        max_digits=9,
+        decimal_places=6,
+    )
+
     def update(self, instance, validated_data):
         from .services import update_artisan_profile
 

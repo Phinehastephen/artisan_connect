@@ -129,6 +129,12 @@ def update_artisan_profile(artisan, **fields):
     if "default_location" in fields:
         artisan.default_location = fields["default_location"]
 
+    if "latitude" in fields:
+        artisan.latitude = fields["latitude"]
+
+    if "longitude" in fields:
+        artisan.longitude = fields["longitude"]
+
     # Save User changes
     user_fields_to_update = []
 
@@ -161,6 +167,12 @@ def update_artisan_profile(artisan, **fields):
 
     if "default_location" in fields:
         artisan_fields_to_update.append("default_location")
+
+    if "latitude" in fields:
+        artisan_fields_to_update.append("latitude")
+
+    if "longitude" in fields:
+        artisan_fields_to_update.append("longitude")
 
     if artisan_fields_to_update:
         artisan.save(update_fields=artisan_fields_to_update)

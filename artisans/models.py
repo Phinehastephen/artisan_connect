@@ -52,6 +52,20 @@ class Artisan(models.Model):
         blank=True,
         null=True,
     )
+    
+    latitude = models.DecimalField(
+    max_digits=9,
+    decimal_places=6,
+    null=True,
+    blank=True,
+    )
+
+    longitude = models.DecimalField(
+    max_digits=9,
+    decimal_places=6,
+    null=True,
+    blank=True,
+    )
 
     services = models.ManyToManyField(
         "services.Service",

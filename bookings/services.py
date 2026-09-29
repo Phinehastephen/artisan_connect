@@ -25,6 +25,17 @@ from .models import Booking
 #     return booking
 
 
+JOB_LOCATION_FIELDS = ["job_address", "job_latitude", "job_longitude"]
+
+
+def _clear_job_location(booking):
+    """Erase the customer's job location once a booking is closed, so it
+    isn't kept around (or exposed) after the artisan no longer needs it."""
+    booking.job_address = None
+    booking.job_latitude = None
+    booking.job_longitude = None
+
+
 @transaction.atomic
 def accept_booking(booking):
     """
@@ -75,7 +86,8 @@ def reject_booking(booking):
         raise ValidationError("Only pending bookings can be rejected.")
 
     booking.status = Booking.Status.CANCELLED
-    booking.save(update_fields=["status"])
+    _clear_job_location(booking)
+    booking.save(update_fields=["status", *JOB_LOCATION_FIELDS])
     return booking
 
 
@@ -88,7 +100,8 @@ def cancel_booking(booking):
         raise ValidationError("Only accepted bookings can be cancelled.")
 
     booking.status = Booking.Status.CANCELLED
-    booking.save(update_fields=["status"])
+    _clear_job_location(booking)
+    booking.save(update_fields=["status", *JOB_LOCATION_FIELDS])
     return booking
 
 
@@ -102,16 +115,12 @@ def finalize_booking(booking):
         
     booking.status = Booking.Status.FINALIZED
     booking.finalized_at = timezone.now()
-    booking.job_address = None
-    booking.job_latitude = None
-    booking.job_longitude = None
-    
+    _clear_job_location(booking)
+
     booking.save(update_fields=[
-        "status", 
-        "finalized_at", 
-        "job_address", 
-        "job_latitude", 
-        "job_longitude"
+        "status",
+        "finalized_at",
+        *JOB_LOCATION_FIELDS,
     ])
     return booking
 

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from accounts.serializers import UserSerializer
+from accounts.serializers import UserPublicSerializer, UserSerializer
 from .models import Customer
 
 
@@ -25,17 +25,16 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 class CustomerPublicSerializer(serializers.ModelSerializer):
     """Customer representation for other users (nested booking detail).
-    Excludes phone_number so artisans and customers can never reach each
-    other outside the app."""
+    Excludes phone_number, email and default_location so artisans and
+    customers can never reach each other outside the app."""
 
-    user = UserSerializer(read_only=True)
+    user = UserPublicSerializer(read_only=True)
 
     class Meta:
         model = Customer
         fields = [
             "id",
             "user",
-            "default_location",
             "created_at",
             "updated_at",
         ]

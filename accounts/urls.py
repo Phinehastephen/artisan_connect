@@ -5,6 +5,11 @@ from .views import CustomJWTLoginView
 from .views import (
     CustomerRegisterAPIView,
     ArtisanRegisterAPIView,
+    VerifyEmailAPIView,
+    ResendVerificationEmailAPIView,
+    PasswordResetRequestAPIView,
+    PasswordResetVerifyAPIView,
+    PasswordResetConfirmAPIView,
 )
 
 urlpatterns = [
@@ -35,4 +40,39 @@ urlpatterns = [
         name='token_refresh'
         ),
      # api/v1/accounts/auth/refresh
+
+    path(
+        "verify-email/<str:token>",
+        VerifyEmailAPIView.as_view(),
+        name="verify-email",
+    ),
+    # api/v1/accounts/verify-email/<token>
+
+    path(
+        "resend-verification",
+        ResendVerificationEmailAPIView.as_view(),
+        name="resend-verification",
+    ),
+    # api/v1/accounts/resend-verification
+
+    path(
+        "password-reset/request",
+        PasswordResetRequestAPIView.as_view(),
+        name="password-reset-request",
+    ),
+    # api/v1/accounts/password-reset/request
+
+    path(
+        "password-reset/verify",
+        PasswordResetVerifyAPIView.as_view(),
+        name="password-reset-verify",
+    ),
+    # api/v1/accounts/password-reset/verify
+
+    path(
+        "password-reset/confirm",
+        PasswordResetConfirmAPIView.as_view(),
+        name="password-reset-confirm",
+    ),
+    # api/v1/accounts/password-reset/confirm
 ]

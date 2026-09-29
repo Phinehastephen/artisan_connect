@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from accounts.serializers import UserSerializer
+from accounts.serializers import UserPublicSerializer, UserSerializer
 from .models import Artisan
 
 
@@ -35,10 +35,10 @@ class ArtisanSerializer(serializers.ModelSerializer):
 
 class ArtisanPublicSerializer(serializers.ModelSerializer):
     """Artisan representation for other users (marketplace listing, nested
-    booking detail). Excludes phone_number so customers and artisans can
-    never reach each other outside the app."""
+    booking detail). Excludes phone_number and email so customers and
+    artisans can never reach each other outside the app."""
 
-    user = UserSerializer(read_only=True)
+    user = UserPublicSerializer(read_only=True)
 
     class Meta:
         model = Artisan

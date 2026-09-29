@@ -6,6 +6,21 @@ from services.models import Service
 from .models import User
 from artisans.models import Artisan
 
+
+def normalize_and_check_email(email):
+    # Emails are stored lowercased so "John@Gmail.com" and "john@gmail.com"
+    # can't become two separate accounts; the DB unique constraint alone is
+    # case-sensitive.
+    email = email.strip().lower()
+
+    if User.objects.filter(email__iexact=email).exists():
+        raise serializers.ValidationError(
+            "An account with this email already exists."
+        )
+
+    return email
+
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -31,6 +46,23 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
 
+class UserPublicSerializer(serializers.ModelSerializer):
+    """User representation for the *other* party (nested in the customer/
+    artisan public serializers). Excludes email, like phone_number, so
+    customers and artisans can't contact each other outside the app."""
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "full_name",
+            "role",
+            "profile_picture",
+        ]
+        read_only_fields = fields
+
+
 class CustomerRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,
@@ -52,6 +84,9 @@ class CustomerRegisterSerializer(serializers.ModelSerializer):
             "password",
             "phone_number"
         ]
+
+    def validate_email(self, email):
+        return normalize_and_check_email(email)
 
     def create(self, validated_data):
         from .services import register_customer
@@ -85,6 +120,9 @@ class ArtisanRegisterSerializer(serializers.ModelSerializer):
             "phone_number",
             "services",
         ]
+
+    def validate_email(self, email):
+        return normalize_and_check_email(email)
 
     def validate_services(self, services):
         if len(services) > 3:
@@ -148,3 +186,28 @@ class CustomLoginSerializer(serializers.Serializer):
             'access': str(refresh.access_token),
             'refresh': str(refresh),
         }
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class PasswordResetVerifySerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.RegexField(
+        regex=r"^\d{6}$",
+        error_messages={"invalid": "Enter the 6-digit code sent to your email."},
+    )
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    reset_token = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        if data["new_password"] != data["confirm_password"]:
+            raise serializers.ValidationError(
+                {"confirm_password": "Passwords do not match."}
+            )
+
+        return data

@@ -16,6 +16,17 @@ class BookingSerializer(serializers.ModelSerializer):
     artisan_detail = ArtisanPublicSerializer(source="artisan", read_only=True)
     service_detail = ServiceSerializer(source="service", read_only=True)
 
+    JOB_LOCATION_FIELDS = ("job_address", "job_latitude", "job_longitude")
+
+    # The artisan only gets the job location while they actually need to
+    # travel there: hidden while PENDING (they decide from distance/area),
+    # and hidden again once the job is over, so it can't be used to reach
+    # the customer outside the app.
+    ARTISAN_LOCATION_VISIBLE_STATUSES = (
+        Booking.Status.ACCEPTED,
+        Booking.Status.IN_PROGRESS,
+    )
+
     class Meta:
         model = Booking
         fields = [
@@ -45,6 +56,33 @@ class BookingSerializer(serializers.ModelSerializer):
             "finalized_at",
         ]
 
+    def _can_view_job_location(self, booking):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+
+        if user is None or not user.is_authenticated:
+            return False
+
+        if user.role == user.Role.ADMIN:
+            return True
+
+        if booking.customer.user_id == user.id:
+            return True
+
+        return (
+            booking.artisan.user_id == user.id
+            and booking.status in self.ARTISAN_LOCATION_VISIBLE_STATUSES
+        )
+
+    def to_representation(self, booking):
+        data = super().to_representation(booking)
+
+        if not self._can_view_job_location(booking):
+            for field in self.JOB_LOCATION_FIELDS:
+                data[field] = None
+
+        return data
+
     def validate(self, data):
         """Custom validations for booking creation."""
         artisan = data.get("artisan")
@@ -53,3 +91,21 @@ class BookingSerializer(serializers.ModelSerializer):
                 {"artisan": "Bookings can only be created for verified artisans."}
             )
         return data
+
+
+class BookingSummarySerializer(serializers.ModelSerializer):
+    """Minimal booking info for places visible beyond the two parties
+    (e.g. reviews). Never includes the job location."""
+
+    service_detail = ServiceSerializer(source="service", read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = [
+            "id",
+            "service_detail",
+            "status",
+            "created_at",
+            "completed_at",
+        ]
+        read_only_fields = fields

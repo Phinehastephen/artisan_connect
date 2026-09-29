@@ -188,6 +188,19 @@ Higher-level administrative capabilities, such as advanced moderation and custom
 
 ---
 
+## ✉️ Email Verification
+
+Every customer and artisan account has an email address, and email verification confirms the account owner actually controls it. It exists for two specific reasons only:
+
+1. **Account recovery** — a verified email is what a password-reset flow can safely be sent to.
+2. **Preventing duplicate accounts against the same address** — `User.email` is already a unique column, so this isn't about allowing a second signup; it confirms the person signing up actually owns the address they claimed.
+
+**It is intentionally non-blocking.** An unverified customer or artisan can still log in, book/receive bookings, and use the platform fully — verification status never gates any feature in Version 1. A verification email (with a 24-hour link) is sent automatically on registration, and can be resent on request.
+
+Outgoing email is sent through **Brevo**, chosen over raw SMTP (e.g. a personal Gmail account) for reliable deliverability without needing to manage SPF/DKIM on a personal domain.
+
+---
+
 ## 🔁 Service Change Requests
 
 An artisan's services are not freely editable once set. Selecting services is a two-stage flow: an initial selection at registration, and a controlled **Service Change Request** for any change after that.

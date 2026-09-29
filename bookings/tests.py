@@ -288,3 +288,146 @@ class BookingBusinessLogicTests(TestCase):
 
         with self.assertRaises(ValidationError):
             cancel_booking(booking)
+
+class BookingPrivacyTests(TestCase):
+    """Contact and location details must not let the customer and artisan
+    reach each other outside the app."""
+
+    def setUp(self):
+        self.customer_user = User.objects.create_user(
+            username="privacy_customer",
+            email="privacy_customer@example.com",
+            password="testpassword123",
+            role=User.Role.CUSTOMER,
+        )
+        self.customer = Customer.objects.create(
+            user=self.customer_user,
+            phone_number="08011111111",
+            default_location="12 Home Street",
+        )
+
+        self.artisan_user = User.objects.create_user(
+            username="privacy_artisan",
+            email="privacy_artisan@example.com",
+            password="testpassword123",
+            role=User.Role.ARTISAN,
+        )
+        self.artisan = Artisan.objects.create(
+            user=self.artisan_user,
+            phone_number="08022222222",
+            verification_status="VERIFIED",
+        )
+
+        self.admin_user = User.objects.create_user(
+            username="privacy_admin",
+            email="privacy_admin@example.com",
+            password="testpassword123",
+            role=User.Role.ADMIN,
+        )
+
+        self.service = Service.objects.create(
+            name="Plumbing",
+            description="General plumbing services",
+            minimum_price=1000,
+            maximum_price=5000,
+            is_active=True,
+        )
+        self.artisan.services.add(self.service)
+
+        self.booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="12 Test Street, Lagos",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+
+    def _serialize_for(self, user):
+        from rest_framework.test import APIRequestFactory
+        from .serializers import BookingSerializer
+
+        request = APIRequestFactory().get("/")
+        request.user = user
+
+        return BookingSerializer(
+            self.booking, context={"request": request}
+        ).data
+
+    def test_artisan_cannot_see_job_location_while_pending(self):
+        data = self._serialize_for(self.artisan_user)
+
+        self.assertIsNone(data["job_address"])
+        self.assertIsNone(data["job_latitude"])
+        self.assertIsNone(data["job_longitude"])
+
+    def test_artisan_sees_job_location_once_accepted_and_in_progress(self):
+        accept_booking(self.booking)
+        self.assertEqual(
+            self._serialize_for(self.artisan_user)["job_address"],
+            "12 Test Street, Lagos",
+        )
+
+        start_booking(self.booking)
+        self.assertEqual(
+            self._serialize_for(self.artisan_user)["job_address"],
+            "12 Test Street, Lagos",
+        )
+
+    def test_artisan_cannot_see_job_location_after_completion(self):
+        accept_booking(self.booking)
+        start_booking(self.booking)
+        complete_booking(self.booking)
+
+        self.assertIsNone(
+            self._serialize_for(self.artisan_user)["job_address"]
+        )
+
+    def test_customer_and_admin_always_see_job_location(self):
+        self.assertEqual(
+            self._serialize_for(self.customer_user)["job_address"],
+            "12 Test Street, Lagos",
+        )
+        self.assertEqual(
+            self._serialize_for(self.admin_user)["job_address"],
+            "12 Test Street, Lagos",
+        )
+
+    def test_no_request_context_hides_job_location(self):
+        from .serializers import BookingSerializer
+
+        self.assertIsNone(BookingSerializer(self.booking).data["job_address"])
+
+    def test_counterparty_details_have_no_phone_email_or_home(self):
+        data = self._serialize_for(self.customer_user)
+
+        for detail in (data["customer_detail"], data["artisan_detail"]):
+            self.assertNotIn("phone_number", detail)
+            self.assertNotIn("email", detail["user"])
+
+        self.assertNotIn("default_location", data["customer_detail"])
+
+    def test_rejecting_booking_clears_job_location(self):
+        reject_booking(self.booking)
+        self.booking.refresh_from_db()
+
+        self.assertIsNone(self.booking.job_address)
+        self.assertIsNone(self.booking.job_latitude)
+        self.assertIsNone(self.booking.job_longitude)
+
+    def test_cancelling_booking_clears_job_location(self):
+        accept_booking(self.booking)
+        cancel_booking(self.booking)
+        self.booking.refresh_from_db()
+
+        self.assertIsNone(self.booking.job_address)
+        self.assertIsNone(self.booking.job_latitude)
+        self.assertIsNone(self.booking.job_longitude)
+
+    def test_review_booking_summary_has_no_job_location(self):
+        from .serializers import BookingSummarySerializer
+
+        data = BookingSummarySerializer(self.booking).data
+
+        for field in ("job_address", "job_latitude", "job_longitude"):
+            self.assertNotIn(field, data)

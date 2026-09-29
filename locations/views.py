@@ -6,6 +6,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import IsCustomer
+from .services import find_nearby_artisans, resolve_search_coordinates
+from .serializers import NearbyArtisanQuerySerializer, NearbyArtisanSerializer
 
 from .models import SavedLocation
 from .serializers import SavedLocationSerializer
@@ -104,4 +106,56 @@ class SavedLocationDetailView(APIView):
 
         return Response(
             status=status.HTTP_204_NO_CONTENT
+        )
+        
+
+class NearbyArtisanListView(APIView):
+    """
+    GET /nearby-artisans?latitude=..&longitude=..            (current GPS)
+    GET /nearby-artisans?location_type=saved&location_id=5   (own saved location)
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = NearbyArtisanQuerySerializer(data=request.query_params)
+
+        if not query.is_valid():
+            return Response(
+                query.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            latitude, longitude = resolve_search_coordinates(
+                user=request.user,
+                location_type=query.validated_data["location_type"],
+                latitude=query.validated_data.get("latitude"),
+                longitude=query.validated_data.get("longitude"),
+                location_id=query.validated_data.get("location_id"),
+            )
+        except SavedLocation.DoesNotExist:
+            return Response(
+                {"error": "Saved location not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except ValidationError as e:
+            return Response(
+                {"error": e.messages},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        nearby_artisans = find_nearby_artisans(
+            latitude,
+            longitude,
+        )
+
+        serializer = NearbyArtisanSerializer(
+            nearby_artisans,
+            many=True,
+        )
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
         )

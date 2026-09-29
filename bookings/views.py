@@ -35,7 +35,9 @@ class BookingListAPIView(APIView):
             bookings = Booking.objects.filter(customer__user=user)
 
         bookings = bookings.order_by("-created_at")
-        serializer = BookingSerializer(bookings, many=True)
+        serializer = BookingSerializer(
+            bookings, many=True, context={"request": request}
+        )
 
         return Response(
             serializer.data,
@@ -61,7 +63,9 @@ class BookCreateAPIView(APIView):
                 )
 
                 return Response(
-                    BookingSerializer(booking).data,
+                    BookingSerializer(
+                        booking, context={"request": request}
+                    ).data,
                     status=status.HTTP_201_CREATED
                 )
 
@@ -100,7 +104,7 @@ class BookingDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        serializer = BookingSerializer(booking)
+        serializer = BookingSerializer(booking, context={"request": request})
 
         return Response(
             serializer.data,
@@ -167,7 +171,9 @@ class BookingStatusActionView(APIView):
             updated_booking = action_map[action](booking)
 
             return Response(
-                BookingSerializer(updated_booking).data,
+                BookingSerializer(
+                    updated_booking, context={"request": request}
+                ).data,
                 status=status.HTTP_200_OK
             )
 

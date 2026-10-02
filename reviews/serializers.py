@@ -32,8 +32,13 @@ class ReviewSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+        # customer/artisan are never taken from the request: the reviewer is
+        # always the logged-in customer and the artisan comes from the
+        # booking, so nobody can post a review in someone else's name.
         read_only_fields = [
             "id",
+            "customer",
+            "artisan",
             "edited",
             "created_at",
             "updated_at",
@@ -50,3 +55,19 @@ class ReviewSerializer(serializers.ModelSerializer):
         if "comment" in validated_data or "rating" in validated_data:
             instance.edited = True
         return super().update(instance, validated_data)
+
+
+class ReviewEditSerializer(serializers.Serializer):
+    """The only fields a customer may change when editing their review."""
+
+    rating = serializers.DecimalField(
+        max_digits=2,
+        decimal_places=1,
+        min_value=1,
+        max_value=5,
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )

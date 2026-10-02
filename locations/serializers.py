@@ -1,6 +1,5 @@
 from rest_framework import serializers
 from .models import SavedLocation
-from artisans.serializers import ArtisanPublicSerializer
 
 
 class SavedLocationSerializer(serializers.ModelSerializer):
@@ -25,12 +24,8 @@ class SavedLocationSerializer(serializers.ModelSerializer):
         
 
 class NearbyArtisanQuerySerializer(serializers.Serializer):
-    """
-    Query params for nearby-artisan search. Either search around the
-    caller's current GPS position, or around one of their saved locations.
-    Omitting location_type behaves as "current".
-    """
-
+    
+    
     LOCATION_TYPE_CURRENT = "current"
     LOCATION_TYPE_SAVED = "saved"
 
@@ -72,6 +67,49 @@ class NearbyArtisanQuerySerializer(serializers.Serializer):
         return data
 
 
-class NearbyArtisanSerializer(serializers.Serializer):
-    artisan = ArtisanPublicSerializer(read_only=True)
+MAP_COORDINATE_DECIMALS = 3
+
+
+class NearbyArtisanMarkerSerializer(serializers.Serializer):
+
+    id = serializers.IntegerField(source="artisan.id")
+    name = serializers.SerializerMethodField()
+    is_verified = serializers.SerializerMethodField()
     distance_km = serializers.FloatField()
+    location = serializers.CharField(source="artisan.default_location", allow_null=True)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.IntegerField(source="artisan.review_count")
+    starting_price = serializers.DecimalField(
+        source="artisan.starting_price", max_digits=12, decimal_places=2
+    )
+    maximum_price = serializers.DecimalField(
+        source="artisan.maximum_price", max_digits=12, decimal_places=2
+    )
+
+    def get_name(self, item):
+        artisan = item["artisan"]
+        return artisan.business_name or artisan.user.full_name
+
+    def get_is_verified(self, item):
+        return item["artisan"].verification_status == "VERIFIED"
+
+    def get_latitude(self, item):
+        return round(float(item["artisan"].latitude), MAP_COORDINATE_DECIMALS)
+
+    def get_longitude(self, item):
+        return round(float(item["artisan"].longitude), MAP_COORDINATE_DECIMALS)
+
+    def get_average_rating(self, item):
+        rating = item["artisan"].average_rating
+        return None if rating is None else round(float(rating), 1)
+
+
+class GeocodeQuerySerializer(serializers.Serializer):
+    q = serializers.CharField(min_length=3, max_length=200, trim_whitespace=True)
+
+
+class ReverseGeocodeQuerySerializer(serializers.Serializer):
+    latitude = serializers.FloatField(min_value=-90, max_value=90)
+    longitude = serializers.FloatField(min_value=-180, max_value=180)

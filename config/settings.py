@@ -154,6 +154,19 @@ DEFAULT_FROM_EMAIL = os.getenv(
 # Fail fast instead of hanging the request if the SMTP relay is unreachable.
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 
+# OpenStreetMap geocoding (Nominatim)
+# Usage policy: https://operations.osmfoundation.org/policies/nominatim/
+# — max 1 request/second, an identifying User-Agent, and results cached.
+NOMINATIM_BASE_URL = os.getenv(
+    "NOMINATIM_BASE_URL", "https://nominatim.openstreetmap.org"
+)
+NOMINATIM_USER_AGENT = os.getenv(
+    "NOMINATIM_USER_AGENT", "ArtisanConnect/1.0 (final-year project)"
+)
+# Comma-separated ISO country codes to restrict results to; empty = worldwide.
+NOMINATIM_COUNTRY_CODES = os.getenv("NOMINATIM_COUNTRY_CODES", "ng")
+NOMINATIM_TIMEOUT = int(os.getenv("NOMINATIM_TIMEOUT", "5"))
+
 # Base URL used to build links (e.g. email verification) sent outside the app.
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
 
@@ -170,6 +183,8 @@ REST_FRAMEWORK = {
         'email_verification': '3/hour',
         'password_reset': '5/hour',
         'password_reset_verify': '10/hour',
+        # Per user; Nominatim forbids autocomplete-style request floods.
+        'geocoding': '20/minute',
     },
 }
 

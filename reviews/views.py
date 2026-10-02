@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsCustomer
 from .models import Review
-from .serializers import ReviewSerializer
+from .serializers import ReviewEditSerializer, ReviewSerializer
 from .services import create_review, edit_review
 
 from rest_framework import status
@@ -28,7 +28,7 @@ class ReviewListCreateView(APIView):
             try:
                 review = create_review(
                     booking=serializer.validated_data["booking"],
-                    customer=serializer.validated_data["customer"],
+                    customer=request.user.customer_profile,
                     rating=serializer.validated_data["rating"],
                     comment=serializer.validated_data.get("comment", ""),
                 )
@@ -71,12 +71,12 @@ class ReviewDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = ReviewSerializer(data=request.data)
+        serializer = ReviewEditSerializer(data=request.data)
         if serializer.is_valid():
             try:
                 updated_review = edit_review(
                     review=review,
-                    customer=serializer.validated_data["customer"],
+                    customer=request.user.customer_profile,
                     rating=serializer.validated_data["rating"],
                     comment=serializer.validated_data.get("comment", ""),
                 )

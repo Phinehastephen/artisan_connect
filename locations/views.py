@@ -1,13 +1,28 @@
 from django.core.exceptions import ValidationError
+from django.shortcuts import render
+from .models import Location
+
 
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from accounts.permissions import IsCustomer
-from .services import find_nearby_artisans, resolve_search_coordinates
-from .serializers import NearbyArtisanQuerySerializer, NearbyArtisanSerializer
+from .services import (
+    GeocodingUnavailable,
+    find_nearby_artisans,
+    geocode_address,
+    resolve_search_coordinates,
+    reverse_geocode,
+)
+from .serializers import (
+    GeocodeQuerySerializer,
+    NearbyArtisanQuerySerializer,
+    NearbyArtisanMarkerSerializer,
+    ReverseGeocodeQuerySerializer,
+)
 
 from .models import SavedLocation
 from .serializers import SavedLocationSerializer
@@ -111,8 +126,8 @@ class SavedLocationDetailView(APIView):
 
 class NearbyArtisanListView(APIView):
     """
-    GET /nearby-artisans?latitude=..&longitude=..            (current GPS)
-    GET /nearby-artisans?location_type=saved&location_id=5   (own saved location)
+    GET /nearby-artisans?latitude=..&longitude=..           
+    GET /nearby-artisans?location_type=saved&location_id=5
     """
 
     permission_classes = [IsAuthenticated]
@@ -150,12 +165,80 @@ class NearbyArtisanListView(APIView):
             longitude,
         )
 
-        serializer = NearbyArtisanSerializer(
+        markers = NearbyArtisanMarkerSerializer(
             nearby_artisans,
             many=True,
         )
 
         return Response(
-            serializer.data,
+            {
+
+                "origin": {
+                    "latitude": float(latitude),
+                    "longitude": float(longitude),
+                },
+                "results": markers.data,
+            },
             status=status.HTTP_200_OK,
         )
+
+
+def map_view(request):
+    locations = Location.objects.all()
+    return render(request, 'map.html', {'locations': locations})
+
+
+class GeocodeView(APIView):
+ 
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "geocoding"
+
+    def get(self, request):
+        query = GeocodeQuerySerializer(data=request.query_params)
+
+        if not query.is_valid():
+            return Response(query.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            results = geocode_address(query.validated_data["q"])
+        except GeocodingUnavailable as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response(results, status=status.HTTP_200_OK)
+
+
+class ReverseGeocodeView(APIView):
+    
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "geocoding"
+
+    def get(self, request):
+        query = ReverseGeocodeQuerySerializer(data=request.query_params)
+
+        if not query.is_valid():
+            return Response(query.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            place = reverse_geocode(
+                query.validated_data["latitude"],
+                query.validated_data["longitude"],
+            )
+        except GeocodingUnavailable as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        if place is None:
+            return Response(
+                {"error": "No address found for these coordinates."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(place, status=status.HTTP_200_OK)

@@ -1,3 +1,8 @@
+import json
+from unittest.mock import MagicMock, patch
+from urllib.error import URLError
+
+from django.core.cache import cache
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 
@@ -10,6 +15,9 @@ from .services import (
     find_nearby_artisans,
     is_within_nearby_radius,
     resolve_search_coordinates,
+    GeocodingUnavailable,
+    geocode_address,
+    reverse_geocode,
 )
 from .models import SavedLocation
 
@@ -247,3 +255,166 @@ class SearchCoordinateResolutionTests(TestCase):
                 "saved",
                 location_id=self.saved_location.id,
             )
+
+
+def _nominatim_response(payload):
+    response = MagicMock()
+    response.read.return_value = json.dumps(payload).encode("utf-8")
+    response.__enter__.return_value = response
+    return response
+
+
+@patch("locations.services.NOMINATIM_MIN_INTERVAL_SECONDS", 0)
+class GeocodingTests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+
+    @patch("locations.services.urlopen")
+    def test_geocode_returns_candidate_places(self, mock_urlopen):
+        mock_urlopen.return_value = _nominatim_response([
+            {"display_name": "Yaba, Lagos, Nigeria", "lat": "6.5095442", "lon": "3.3710936"},
+        ])
+
+        results = geocode_address("Yaba, Lagos")
+
+        self.assertEqual(
+            results,
+            [{"display_name": "Yaba, Lagos, Nigeria", "latitude": 6.509544, "longitude": 3.371094}],
+        )
+
+        request = mock_urlopen.call_args[0][0]
+        self.assertIn("countrycodes=ng", request.full_url)
+        self.assertIn("ArtisanConnect", request.get_header("User-agent"))
+
+    @patch("locations.services.urlopen")
+    def test_geocode_results_are_cached(self, mock_urlopen):
+        mock_urlopen.return_value = _nominatim_response([])
+
+        geocode_address("Nowhere Street")
+        geocode_address("  nowhere   street ")
+
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+    @patch("locations.services.urlopen", side_effect=URLError("down"))
+    def test_geocode_raises_when_service_unavailable(self, mock_urlopen):
+        with self.assertRaises(GeocodingUnavailable):
+            geocode_address("Yaba, Lagos")
+
+    @patch("locations.services.urlopen")
+    def test_reverse_geocode_returns_address(self, mock_urlopen):
+        mock_urlopen.return_value = _nominatim_response(
+            {"display_name": "Herbert Macaulay Way, Yaba", "lat": "6.5244", "lon": "3.3792"}
+        )
+
+        place = reverse_geocode(6.5244, 3.3792)
+
+        self.assertEqual(place["display_name"], "Herbert Macaulay Way, Yaba")
+
+    @patch("locations.services.urlopen")
+    def test_reverse_geocode_with_no_address_returns_none_and_is_cached(self, mock_urlopen):
+        mock_urlopen.return_value = _nominatim_response({"error": "Unable to geocode"})
+
+        self.assertIsNone(reverse_geocode(0.0, 0.0))
+        self.assertIsNone(reverse_geocode(0.0, 0.0))
+        self.assertEqual(mock_urlopen.call_count, 1)
+
+
+class NearbyArtisanMarkerTests(TestCase):
+
+    def setUp(self):
+        from services.models import Service
+
+        self.artisan_user = User.objects.create_user(
+            username="marker_artisan",
+            email="marker_artisan@example.com",
+            password="testpassword123",
+            full_name="John Doe",
+            role=User.Role.ARTISAN,
+        )
+        self.artisan = Artisan.objects.create(
+            user=self.artisan_user,
+            phone_number="08000000099",
+            verification_status=Artisan.VerificationStatus.VERIFIED,
+            business_name="John Plumbing",
+            default_location="Yaba, Lagos",
+            latitude=6.531234,
+            longitude=3.381987,
+            starting_price=1000,
+            maximum_price=5000,
+        )
+        self.service = Service.objects.create(
+            name="Plumbing",
+            description="General plumbing services",
+            minimum_price=1000,
+            maximum_price=5000,
+            is_active=True,
+        )
+
+    def _markers(self):
+        from .serializers import NearbyArtisanMarkerSerializer
+
+        return NearbyArtisanMarkerSerializer(
+            find_nearby_artisans(6.524400, 3.379200), many=True
+        ).data
+
+    def _add_review(self, number, rating):
+        from bookings.models import Booking
+        from reviews.models import Review
+
+        user = User.objects.create_user(
+            username=f"reviewer{number}",
+            email=f"reviewer{number}@example.com",
+            password="testpassword123",
+        )
+        customer = Customer.objects.create(user=user)
+        booking = Booking.objects.create(
+            customer=customer,
+            artisan=self.artisan,
+            service=self.service,
+            status=Booking.Status.COMPLETED,
+        )
+        Review.objects.create(
+            booking=booking,
+            customer=customer,
+            artisan=self.artisan,
+            rating=rating,
+        )
+
+    def test_marker_contains_only_discovery_fields(self):
+        marker = self._markers()[0]
+
+        self.assertEqual(
+            set(marker),
+            {
+                "id", "name", "is_verified", "distance_km", "location",
+                "latitude", "longitude", "average_rating", "review_count",
+                "starting_price", "maximum_price",
+            },
+        )
+        self.assertEqual(marker["name"], "John Plumbing")
+        self.assertTrue(marker["is_verified"])
+        self.assertEqual(marker["location"], "Yaba, Lagos")
+
+    def test_marker_coordinates_are_rounded(self):
+        marker = self._markers()[0]
+
+        self.assertEqual(marker["latitude"], 6.531)
+        self.assertEqual(marker["longitude"], 3.382)
+
+    def test_marker_name_falls_back_to_full_name(self):
+        self.artisan.business_name = ""
+        self.artisan.save(update_fields=["business_name"])
+
+        self.assertEqual(self._markers()[0]["name"], "John Doe")
+
+    def test_marker_rating_is_averaged(self):
+        self.assertIsNone(self._markers()[0]["average_rating"])
+        self.assertEqual(self._markers()[0]["review_count"], 0)
+
+        self._add_review(1, 5)
+        self._add_review(2, 4)
+
+        marker = self._markers()[0]
+        self.assertEqual(marker["average_rating"], 4.5)
+        self.assertEqual(marker["review_count"], 2)

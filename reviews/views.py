@@ -38,7 +38,7 @@ class ReviewListCreateView(APIView):
                 )
             except ValidationError as e:
                 return Response(
-                    {"error": e.message},
+                    {"error": e.messages},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -86,7 +86,7 @@ class ReviewDetailView(APIView):
                 )
             except ValidationError as e:
                 return Response(
-                    {"error": e.message},
+                    {"error": e.messages},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

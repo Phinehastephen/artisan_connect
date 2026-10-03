@@ -222,6 +222,7 @@ Rules:
 - Each code allows **at most 5 wrong attempts**, after which it stops working (even the correct code). Requesting a new code cancels any previous one.
 - Codes are stored hashed, never in plain text. The reset token can only be used once.
 - The new password must pass the same strength rules as registration.
+- Completing a reset **logs out every device** (all existing sessions are revoked), in case the account was being used by someone else.
 - Completing a reset also marks the email as verified (receiving the code proves the user controls the inbox), and a "your password was changed" notice is emailed.
 - Requests are rate-limited: 5 code requests and 10 verification attempts per hour.
 
@@ -308,7 +309,7 @@ Each result is a map marker containing only what a customer needs to discover an
 | `id` | Used to open the artisan's profile / book them |
 | `name` | Business name (falls back to the artisan's full name) |
 | `is_verified` | Always true in results — only verified artisans are shown |
-| `distance_km` | Calculated on the server from the artisan's exact location |
+| `distance_km` | Calculated on the server, measured to the same rounded position as the pin (so repeated searches from different points can't be used to work out the artisan's exact location) |
 | `location` | The artisan's location in readable words (e.g. "Yaba, Lagos") |
 | `latitude` / `longitude` | Pin position, **rounded to ~110 m** so it never points at a specific building (an artisan's location may be their home) |
 | `average_rating` / `review_count` | From reviews of completed jobs |
@@ -337,7 +338,7 @@ OpenStreetMap on the frontend is for **visualization and navigation**: showing t
 
 - A customer can create, list, view, and delete their own saved locations (maximum five).
 - Saved locations are private to their owner. Requesting another customer's saved location — directly, or as `location_id` in a nearby search — returns **404 Not Found**, exactly like a location that doesn't exist, so saved locations can't be discovered by guessing IDs.
-- Searching from a saved location is only available to customers.
+- Nearby search is only available to customers, and is limited to 30 searches per minute per user.
 
 ### Job Location Privacy
 
@@ -375,9 +376,29 @@ Booking
 
 Reviews are tied to completed work rather than being freely submitted against any artisan.
 
+### Booking Lifecycle
+
+```text
+PENDING ──artisan accepts──▶ ACCEPTED ──artisan starts──▶ IN_PROGRESS
+   │                            │                              │
+   ├─artisan rejects─┐          │                    artisan marks complete
+   └─customer cancels┴──────────┴─▶ CANCELLED                  ▼
+                                                           COMPLETED
+                                                               │
+                                   customer confirms ──────────┼──▶ FINALIZED
+                                   no reply within 3 days ─────┘
+```
+
+- A customer can cancel a booking while it is **pending or accepted**, but not once work has started.
+- **Both parties must agree a job is finished.** The artisan marking the job complete counts as their confirmation; the customer is then asked to confirm on their side. This protects artisans from customers who forget to confirm, and gives the app a record that both sides agreed.
+- A customer who hasn't confirmed receives **email reminders** 24 hours, 48 hours, and 66 hours after completion (the last one is marked as the final reminder). If they still haven't confirmed **3 days** after completion, the booking is finalized automatically.
+- An admin can also finalize a completed booking manually (for example, to settle a dispute). Nobody else can.
+- Finalizing (by any route) erases the job location. Each booking records how it was finalized: confirmed by the customer, automatically, or by an admin.
+- Reminders and auto-finalization are run by `python manage.py process_completed_bookings`, which should be scheduled to run every hour (Windows Task Scheduler or cron).
+
 ### Review Rules
 
-- A customer must have completed a booking before reviewing an artisan.
+- A customer must have completed a booking before reviewing an artisan. A review can be left once the artisan marks the job complete, and is still allowed after the booking is finalized, so finalizing can never be used to prevent a review.
 - Reviews are associated with the relevant booking.
 - An artisan cannot review themselves.
 - Review editing is restricted according to the approved project rules.
@@ -390,6 +411,7 @@ Reviews are tied to completed work rather than being freely submitted against an
 The following rules were not part of the original SRS/design but were established while building the backend. They are now treated as approved, in effect the same as anything else in this document:
 
 - **Artisan profile fields have independent 6-month cooldowns.** `full_name`, `profile_picture`, and `business_name` can each be changed at most once every 6 months, tracked independently per field. `phone_number` and `default_location` have no cooldown.
+- **Pending and rejected artisans cannot log in.** An artisan can only log in once an admin has approved them.
 - **Only verified artisans can edit their profile.** An artisan with `PENDING` or `REJECTED` verification status cannot update any profile field until an admin approves them.
 - **An artisan's price range is a calculated value, never a direct input.** `starting_price` and `maximum_price` are derived automatically as the min/max across the artisan's currently assigned services, recalculated whenever the service list changes. This follows the "store facts, calculate values" principle above.
 - **Services enforce `minimum_price ≤ maximum_price`.** Both at the model level and in the API serializer.
@@ -490,6 +512,7 @@ The following decisions are part of the project's approved architecture:
 - Multiple active device sessions are supported.
 - Usernames are editable according to the approved account rules.
 - Phone numbers remain private.
+- **One email, one account, one role — permanently.** An email address (case-insensitive) can belong to only one account, whether customer, artisan, or admin. An artisan who wants to hire another artisan must register a separate customer account with a different email. This applies to all future versions.
 - Customer suggestions for new service categories are postponed.
 - Date of birth is postponed to a later version.
 - Labour price estimation excludes material costs.

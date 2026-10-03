@@ -402,6 +402,14 @@ class NearbyArtisanMarkerTests(TestCase):
         self.assertEqual(marker["latitude"], 6.531)
         self.assertEqual(marker["longitude"], 3.382)
 
+    def test_distance_is_measured_to_the_rounded_pin(self):
+        marker = self._markers()[0]
+        expected = round(
+            calculate_distance_km(6.524400, 3.379200, 6.531, 3.382), 2
+        )
+
+        self.assertEqual(marker["distance_km"], expected)
+
     def test_marker_name_falls_back_to_full_name(self):
         self.artisan.business_name = ""
         self.artisan.save(update_fields=["business_name"])

@@ -2,19 +2,19 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.core.exceptions import ValidationError
-from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.models import User
-from accounts.permissions import IsCustomer, IsArtisan
+from accounts.permissions import IsAdmin, IsCustomer, IsArtisan
 from .models import Booking
 from .permissions import IsBookingCustomer, IsBookingArtisan
-from .serializers import BookingSerializer
+from .serializers import BookingCreateSerializer, BookingSerializer
 from .services import (
     create_booking,
     accept_booking,
     start_booking,
     complete_booking,
+    confirm_completion,
     finalize_booking,
     reject_booking,
     cancel_booking,
@@ -49,14 +49,14 @@ class BookCreateAPIView(APIView):
     permission_classes = [IsAuthenticated, IsCustomer]
 
     def post(self, request, *args, **kwargs):
-        serializer = BookingSerializer(data=request.data)
+        serializer = BookingCreateSerializer(data=request.data)
 
         if serializer.is_valid():
             try:
                 booking = create_booking(
-                    customer=serializer.validated_data.get("customer"),
-                    artisan=serializer.validated_data.get("artisan"),
-                    service=serializer.validated_data.get("service"),
+                    customer=request.user.customer_profile,
+                    artisan=serializer.validated_data["artisan"],
+                    service=serializer.validated_data["service"],
                     job_address=serializer.validated_data.get("job_address"),
                     job_latitude=serializer.validated_data.get("job_latitude"),
                     job_longitude=serializer.validated_data.get("job_longitude"),
@@ -71,7 +71,7 @@ class BookCreateAPIView(APIView):
 
             except ValidationError as e:
                 return Response(
-                    {"error": e.message},
+                    {"error": e.messages},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -113,17 +113,13 @@ class BookingDetailView(APIView):
 
 
 class BookingStatusActionView(APIView):
-    """
-    Handles state transitions for a booking based on the requested action.
-
-    "finalize" is intentionally left open to any authenticated user involved
-    in the booking's lifecycle rather than gated to a single role, since the
-    project has not yet decided who is responsible for triggering it.
-    """
     permission_classes = [IsAuthenticated]
 
     ARTISAN_ACTIONS = {"accept", "start", "complete", "reject"}
-    CUSTOMER_ACTIONS = {"cancel"}
+    CUSTOMER_ACTIONS = {"cancel", "confirm"}
+    # Normally a booking finalizes when the customer confirms (or after 3
+    # days); a manual finalize is an admin override for disputes.
+    ADMIN_ACTIONS = {"finalize"}
 
     def post(self, request, pk, action):
         try:
@@ -138,6 +134,7 @@ class BookingStatusActionView(APIView):
             "accept": accept_booking,
             "start": start_booking,
             "complete": complete_booking,
+            "confirm": confirm_completion,
             "finalize": finalize_booking,
             "reject": reject_booking,
             "cancel": cancel_booking,
@@ -167,6 +164,12 @@ class BookingStatusActionView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        if action in self.ADMIN_ACTIONS and not IsAdmin().has_permission(request, self):
+            return Response(
+                {"error": "Only an admin can perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         try:
             updated_booking = action_map[action](booking)
 
@@ -179,6 +182,6 @@ class BookingStatusActionView(APIView):
 
         except ValidationError as e:
             return Response(
-                {"error": e.message},
+                {"error": e.messages},
                 status=status.HTTP_400_BAD_REQUEST
             )

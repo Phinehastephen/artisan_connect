@@ -130,7 +130,9 @@ class NearbyArtisanListView(APIView):
     GET /nearby-artisans?location_type=saved&location_id=5
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "nearby_search"
 
     def get(self, request):
         query = NearbyArtisanQuerySerializer(data=request.query_params)

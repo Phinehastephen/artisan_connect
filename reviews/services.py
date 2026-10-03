@@ -19,7 +19,7 @@ def create_review(
             "You can only review your own booking."
         )
 
-    if booking.status != "COMPLETED":
+    if booking.status not in ("COMPLETED", "FINALIZED"):
         raise ValidationError(
             "Only completed bookings can be reviewed."
         )

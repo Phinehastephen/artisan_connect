@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
 
     "accounts",
     "customers",
@@ -151,6 +152,9 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv(
     "DEFAULT_FROM_EMAIL", "Artisan Connect <stephenokonkwo18@gmail.com>"
 )
+# Emails whose send time could leak information (password reset) go out on
+# a background thread. Tests turn this off so mail.outbox is filled at once.
+SEND_EMAIL_IN_BACKGROUND = os.getenv("SEND_EMAIL_IN_BACKGROUND", "True").lower() == "true"
 # Fail fast instead of hanging the request if the SMTP relay is unreachable.
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 
@@ -185,6 +189,7 @@ REST_FRAMEWORK = {
         'password_reset_verify': '10/hour',
         # Per user; Nominatim forbids autocomplete-style request floods.
         'geocoding': '20/minute',
+        'nearby_search': '30/minute',
     },
 }
 
@@ -192,7 +197,9 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': False,
+    # A used refresh token can't be reused, and a password reset can revoke
+    # every session (see accounts.services.reset_password).
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 

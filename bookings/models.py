@@ -78,5 +78,21 @@ class Booking(models.Model):
         blank=True,
     )
 
+    class FinalizationMethod(models.TextChoices):
+        CUSTOMER_CONFIRMED = "CUSTOMER_CONFIRMED", "Confirmed by customer"
+        AUTO = "AUTO", "Auto-finalized"
+        ADMIN = "ADMIN", "Finalized by admin"
+
+    finalization_method = models.CharField(
+        max_length=20,
+        choices=FinalizationMethod.choices,
+        null=True,
+        blank=True,
+    )
+
+    confirmation_reminders_sent = models.PositiveSmallIntegerField(
+        default=0,
+    )
+
     def __str__(self):
         return f"Booking #{self.id}"

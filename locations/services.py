@@ -87,6 +87,8 @@ def calculate_distance_km(
 
 NEARBY_RADIUS_KM = 10
 
+MAP_COORDINATE_DECIMALS = 3
+
 
 def is_within_nearby_radius(distance_km):
    
@@ -136,11 +138,12 @@ def find_nearby_artisans(latitude, longitude):
     )
 
     for artisan in artisans:
+
         distance_km = calculate_distance_km(
             latitude,
             longitude,
-            artisan.latitude,
-            artisan.longitude,
+            round(float(artisan.latitude), MAP_COORDINATE_DECIMALS),
+            round(float(artisan.longitude), MAP_COORDINATE_DECIMALS),
         )
 
         if is_within_nearby_radius(distance_km):

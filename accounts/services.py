@@ -1,5 +1,6 @@
 import logging
 import secrets
+import threading
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -8,6 +9,11 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
+
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken,
+    OutstandingToken,
+)
 
 from .models import EmailVerificationToken, PasswordResetToken, User
 from customers.models import Customer
@@ -44,9 +50,7 @@ def send_verification_email(user, token):
             recipient_list=[user.email],
         )
     except Exception:
-        # Email verification is non-blocking (see README): a delivery
-        # failure here must never surface as a registration/API error for
-        # an already-committed user. Resend is available separately.
+
         logger.exception(
             "Failed to send verification email to %s", user.email
         )
@@ -76,6 +80,13 @@ def verify_email(token_str):
     return user
 
 
+def _run_in_background(func, *args):
+    if settings.SEND_EMAIL_IN_BACKGROUND:
+        threading.Thread(target=func, args=args, daemon=True).start()
+    else:
+        func(*args)
+
+
 def _generate_password_reset_code():
     return f"{secrets.randbelow(10**6):06d}"
 
@@ -95,8 +106,7 @@ def send_password_reset_code_email(user, code):
             recipient_list=[user.email],
         )
     except Exception:
-        # Same reasoning as send_verification_email: never leak delivery
-        # failures (or account existence) through the API response.
+
         logger.exception(
             "Failed to send password reset code to %s", user.email
         )
@@ -127,6 +137,9 @@ def request_password_reset(email):
     so the endpoint can't be used to discover registered emails.
     """
     user = User.objects.filter(email__iexact=email, is_active=True).first()
+    code = _generate_password_reset_code()
+
+    code_hash = make_password(code)
 
     if user is None:
         return None
@@ -135,13 +148,15 @@ def request_password_reset(email):
         used_at=timezone.now()
     )
 
-    code = _generate_password_reset_code()
     PasswordResetToken.objects.create(
         user=user,
-        code_hash=make_password(code),
+        code_hash=code_hash,
     )
 
-    transaction.on_commit(lambda: send_password_reset_code_email(user, code))
+# this ensures that the email is sent after the transaction commits, so if the user creation fails, no email is sent.
+    transaction.on_commit(
+        lambda: _run_in_background(send_password_reset_code_email, user, code)
+    )
 
     return None
 
@@ -187,6 +202,13 @@ def verify_password_reset_code(email, code):
     return reset.reset_token
 
 
+    # Log out every device: whoever reset the password may be recovering
+def _revoke_all_sessions(user):
+
+    for outstanding in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=outstanding)
+
+
 @transaction.atomic
 def reset_password(reset_token, new_password):
     try:
@@ -205,13 +227,13 @@ def reset_password(reset_token, new_password):
     validate_password(new_password, user=user)
 
     user.set_password(new_password)
-    # Receiving the code proves control of the inbox, same as clicking the
-    # verification link.
     user.email_verified = True
     user.save(update_fields=["password", "email_verified"])
 
     reset.used_at = timezone.now()
     reset.save(update_fields=["used_at"])
+
+    _revoke_all_sessions(user)
 
     transaction.on_commit(lambda: send_password_changed_email(user))
 

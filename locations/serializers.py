@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import SavedLocation
+from .services import MAP_COORDINATE_DECIMALS
 
 
 class SavedLocationSerializer(serializers.ModelSerializer):
@@ -65,9 +66,6 @@ class NearbyArtisanQuerySerializer(serializers.Serializer):
             )
 
         return data
-
-
-MAP_COORDINATE_DECIMALS = 3
 
 
 class NearbyArtisanMarkerSerializer(serializers.Serializer):

@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.core import mail
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from artisans.models import Artisan
@@ -206,6 +206,7 @@ class EmailVerificationTests(TestCase):
 
 
 
+@override_settings(SEND_EMAIL_IN_BACKGROUND=False)
 class PasswordResetTests(TestCase):
 
     def setUp(self):
@@ -258,6 +259,19 @@ class PasswordResetTests(TestCase):
         self.assertTrue(self.user.check_password("BrandNewPass456!"))
         self.assertTrue(self.user.email_verified)
         self.assertIn("password was changed", mail.outbox[-1].subject)
+
+    def test_reset_revokes_existing_refresh_tokens(self):
+        from rest_framework_simplejwt.exceptions import TokenError
+        from rest_framework_simplejwt.tokens import RefreshToken
+
+        old_refresh = RefreshToken.for_user(self.user)
+
+        code = self._request_code()
+        reset_token = verify_password_reset_code(self.user.email, code)
+        reset_password(reset_token, "BrandNewPass456!")
+
+        with self.assertRaises(TokenError):
+            RefreshToken(str(old_refresh)).check_blacklist()
 
     def test_wrong_code_raises_and_counts_attempt(self):
         code = self._request_code()

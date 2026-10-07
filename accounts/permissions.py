@@ -18,6 +18,7 @@ class IsCustomer(BasePermission):
             request.user
             and request.user.is_authenticated
             and request.user.role == User.Role.CUSTOMER
+            and hasattr(request.user, "customer_profile")
         )
 
 
@@ -27,4 +28,5 @@ class IsArtisan(BasePermission):
             request.user
             and request.user.is_authenticated
             and request.user.role == User.Role.ARTISAN
+            and hasattr(request.user, "artisan_profile")
         )

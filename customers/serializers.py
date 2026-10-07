@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from accounts.models import User
 from accounts.serializers import UserPublicSerializer, UserSerializer
 from .models import Customer
 
@@ -40,3 +41,39 @@ class CustomerPublicSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+
+class CustomerProfileUpdateSerializer(serializers.Serializer):
+    LOCKED_FIELDS = ("phone_number", "email")
+
+    username = serializers.CharField(
+        max_length=150,
+        required=False,
+        validators=User._meta.get_field("username").validators,
+    )
+    full_name = serializers.CharField(max_length=150, required=False)
+    profile_picture = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+    default_location = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+
+    def validate(self, data):
+        # Say so explicitly rather than silently ignoring them, so the app
+        # doesn't think the change went through.
+        locked = [name for name in self.LOCKED_FIELDS if name in self.initial_data]
+        if locked:
+            raise serializers.ValidationError(
+                {name: "This can't be changed." for name in locked}
+            )
+
+        if not data:
+            raise serializers.ValidationError("No changes were provided.")
+
+        return data

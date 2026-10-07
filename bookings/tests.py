@@ -21,6 +21,8 @@ from .services import (
     reject_booking,
     cancel_booking,
     confirm_completion,
+    dispute_completion,
+    reopen_booking,
     send_due_confirmation_reminders,
     auto_finalize_overdue_bookings,
 )
@@ -590,3 +592,169 @@ class CompletionConfirmationTests(TestCase):
             rating=5,
         )
         self.assertEqual(review.booking, self.booking)
+
+    REASON = "The tap is still leaking after the repair."
+
+    def test_customer_can_dispute_with_a_reason(self):
+        dispute_completion(self.booking, self.REASON)
+        self.booking.refresh_from_db()
+
+        self.assertEqual(self.booking.status, Booking.Status.DISPUTED)
+        self.assertEqual(self.booking.dispute_reason, self.REASON)
+        self.assertIsNotNone(self.booking.disputed_at)
+
+    def test_dispute_needs_a_proper_reason(self):
+        for reason in (None, "", "   bad job        ", "x" * 19):
+            with self.assertRaises(ValidationError):
+                dispute_completion(self.booking, reason)
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.COMPLETED)
+
+    def test_cannot_dispute_before_artisan_completes(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="12 Test Street",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+
+        with self.assertRaises(ValidationError):
+            dispute_completion(booking, self.REASON)
+
+    def test_dispute_stops_reminders_and_auto_finalize(self):
+        dispute_completion(self.booking, self.REASON)
+
+        self.assertEqual(send_due_confirmation_reminders(self._after(30)), 0)
+        self.assertEqual(auto_finalize_overdue_bookings(self._after(100)), 0)
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.DISPUTED)
+
+    def test_disputed_booking_cannot_be_confirmed(self):
+        dispute_completion(self.booking, self.REASON)
+
+        with self.assertRaises(ValidationError):
+            confirm_completion(self.booking)
+
+    def test_admin_can_finalize_a_disputed_booking(self):
+        dispute_completion(self.booking, self.REASON)
+        finalize_booking(self.booking)
+        self.booking.refresh_from_db()
+
+        self.assertEqual(self.booking.status, Booking.Status.FINALIZED)
+        self.assertEqual(
+            self.booking.finalization_method,
+            Booking.FinalizationMethod.ADMIN,
+        )
+        self.assertIsNone(self.booking.job_address)
+
+    def test_reopened_job_gets_fresh_reminders_and_timer(self):
+        send_due_confirmation_reminders(self._after(24))
+        dispute_completion(self.booking, self.REASON)
+
+        reopen_booking(self.booking)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.IN_PROGRESS)
+        self.assertIsNone(self.booking.completed_at)
+        self.assertEqual(self.booking.dispute_reason, self.REASON)
+
+        complete_booking(self.booking)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.confirmation_reminders_sent, 0)
+        self.assertEqual(auto_finalize_overdue_bookings(self._after(71)), 0)
+        self.assertEqual(auto_finalize_overdue_bookings(self._after(72)), 1)
+
+    def test_only_disputed_bookings_can_be_reopened(self):
+        with self.assertRaises(ValidationError):
+            reopen_booking(self.booking)
+
+    def test_disputed_booking_can_be_reviewed(self):
+        from reviews.services import create_review
+
+        dispute_completion(self.booking, self.REASON)
+
+        review = create_review(
+            booking=self.booking,
+            customer=self.customer,
+            rating=2,
+        )
+        self.assertEqual(review.booking, self.booking)
+
+
+    def test_non_text_dispute_reason_is_rejected_cleanly(self):
+        for reason in (12345, ["The tap is still leaking badly."], {"a": 1}):
+            with self.assertRaises(ValidationError):
+                dispute_completion(self.booking, reason)
+
+    def test_no_reminder_once_the_deadline_has_passed(self):
+        self.assertEqual(send_due_confirmation_reminders(self._after(80)), 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def _admin(self, username, **extra):
+        return User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="testpassword123",
+            role=User.Role.ADMIN,
+            **extra,
+        )
+
+    def test_dispute_emails_every_active_admin(self):
+        self._admin("admin1")
+        self._admin("admin2")
+        self._admin("former_admin", is_active=False)
+
+        with self.settings(SEND_EMAIL_IN_BACKGROUND=False):
+            with self.captureOnCommitCallbacks(execute=True):
+                dispute_completion(self.booking, self.REASON)
+
+        self.assertEqual(len(mail.outbox), 1)
+        email = mail.outbox[0]
+        self.assertEqual(
+            sorted(email.to), ["admin1@example.com", "admin2@example.com"]
+        )
+        self.assertIn(f"#{self.booking.id}", email.subject)
+        self.assertIn(self.REASON, email.body)
+        self.assertIn("Joe Plumbing", email.body)
+        self.assertIn(f"/status/{self.booking.id}/reopen", email.body)
+
+    def test_dispute_still_succeeds_if_the_email_fails(self):
+        self._admin("admin1")
+
+        with self.settings(SEND_EMAIL_IN_BACKGROUND=False):
+            with patch("bookings.services.send_mail", side_effect=Exception("SMTP down")):
+                with self.captureOnCommitCallbacks(execute=True):
+                    dispute_completion(self.booking, self.REASON)
+
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.DISPUTED)
+
+    def test_no_dispute_email_when_dispute_is_rejected(self):
+        self._admin("admin1")
+
+        with self.settings(SEND_EMAIL_IN_BACKGROUND=False):
+            with self.captureOnCommitCallbacks(execute=True):
+                with self.assertRaises(ValidationError):
+                    dispute_completion(self.booking, "too short")
+
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class BookingInputTests(TestCase):
+
+    def test_job_address_and_gps_are_required(self):
+        from .serializers import BookingCreateSerializer
+
+        serializer = BookingCreateSerializer(data={"artisan": 1, "service": 1})
+
+        self.assertFalse(serializer.is_valid())
+        for field in ("job_address", "job_latitude", "job_longitude"):
+            self.assertIn(field, serializer.errors)
+
+    def test_review_summary_does_not_reveal_status(self):
+        from .serializers import BookingSummarySerializer
+
+        self.assertNotIn("status", BookingSummarySerializer.Meta.fields)

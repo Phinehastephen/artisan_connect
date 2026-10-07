@@ -7,7 +7,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from rest_framework_simplejwt.token_blacklist.models import (
@@ -80,7 +80,7 @@ def verify_email(token_str):
     return user
 
 
-def _run_in_background(func, *args):
+def run_in_background(func, *args):
     if settings.SEND_EMAIL_IN_BACKGROUND:
         threading.Thread(target=func, args=args, daemon=True).start()
     else:
@@ -155,7 +155,7 @@ def request_password_reset(email):
 
 # this ensures that the email is sent after the transaction commits, so if the user creation fails, no email is sent.
     transaction.on_commit(
-        lambda: _run_in_background(send_password_reset_code_email, user, code)
+        lambda: run_in_background(send_password_reset_code_email, user, code)
     )
 
     return None
@@ -224,6 +224,10 @@ def reset_password(reset_token, new_password):
         raise ValidationError("Invalid or expired reset token.")
 
     user = reset.user
+
+    if not user.is_active:
+        raise ValidationError("Invalid or expired reset token.")
+
     validate_password(new_password, user=user)
 
     user.set_password(new_password)
@@ -240,6 +244,18 @@ def reset_password(reset_token, new_password):
     return user
 
 
+def _save_new_user(user):
+    # The serializer checks username/email are free, but two signups at the
+    # same moment can both pass that check; the DB constraint catches it.
+    try:
+        with transaction.atomic():
+            user.save()
+    except IntegrityError:
+        raise ValidationError(
+            "An account with this username or email already exists."
+        )
+
+
 @transaction.atomic
 def register_customer(validated_data):
     phone_number = validated_data.pop("phone_number")
@@ -251,7 +267,7 @@ def register_customer(validated_data):
     )
 
     user.set_password(password)
-    user.save()
+    _save_new_user(user)
 
     Customer.objects.create(
         user=user,
@@ -276,7 +292,7 @@ def register_artisan(validated_data):
     )
 
     user.set_password(password)
-    user.save()
+    _save_new_user(user)
 
     artisan = Artisan.objects.create(
         user=user,

@@ -1,6 +1,4 @@
 from django.core.exceptions import ValidationError
-from django.shortcuts import render
-from .models import Location
 
 
 from rest_framework import status
@@ -165,6 +163,7 @@ class NearbyArtisanListView(APIView):
         nearby_artisans = find_nearby_artisans(
             latitude,
             longitude,
+            service=query.validated_data.get("service"),
         )
 
         markers = NearbyArtisanMarkerSerializer(
@@ -183,11 +182,6 @@ class NearbyArtisanListView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-
-
-def map_view(request):
-    locations = Location.objects.all()
-    return render(request, 'map.html', {'locations': locations})
 
 
 class GeocodeView(APIView):

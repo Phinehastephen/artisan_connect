@@ -31,7 +31,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 
 
 # Application definition
@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "locations",
     "reviews",
     "bookings",
+    "ai",
 ]
 
 MIDDLEWARE = [
@@ -149,8 +150,9 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+# Must be a sender verified in Brevo; set it in .env.
 DEFAULT_FROM_EMAIL = os.getenv(
-    "DEFAULT_FROM_EMAIL", "Artisan Connect <stephenokonkwo18@gmail.com>"
+    "DEFAULT_FROM_EMAIL", "Artisan Connect <no-reply@localhost>"
 )
 # Emails whose send time could leak information (password reset) go out on
 # a background thread. Tests turn this off so mail.outbox is filled at once.
@@ -190,6 +192,10 @@ REST_FRAMEWORK = {
         # Per user; Nominatim forbids autocomplete-style request floods.
         'geocoding': '20/minute',
         'nearby_search': '30/minute',
+        'smart_search': '30/minute',
+        # Per IP: slows password guessing, and each signup sends an email.
+        'login': '10/minute',
+        'registration': '10/hour',
     },
 }
 

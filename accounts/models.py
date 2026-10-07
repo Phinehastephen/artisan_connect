@@ -2,9 +2,17 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, UserManager as DjangoUserManager
 from django.db import models
 from django.utils import timezone
+
+
+class UserManager(DjangoUserManager):
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        # Without this a superuser gets the default CUSTOMER role, which the
+        # app's IsAdmin permission rejects.
+        extra_fields.setdefault("role", "ADMIN")
+        return super().create_superuser(username, email, password, **extra_fields)
 
 
 class User(AbstractUser):
@@ -56,6 +64,22 @@ class User(AbstractUser):
     updated_at = models.DateTimeField(
         auto_now=True
     )
+
+    objects = UserManager()
+
+    def clean(self):
+        super().clean()
+        # Lowercase before Django's unique check runs, so admin forms reject
+        # "TAKEN@x.com" when "taken@x.com" exists instead of crashing on save.
+        if self.email:
+            self.email = self.email.strip().lower()
+
+    def save(self, *args, **kwargs):
+        # Registration already lowercases, but admin and createsuperuser
+        # don't go through it.
+        if self.email:
+            self.email = self.email.strip().lower()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.username

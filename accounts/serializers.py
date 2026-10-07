@@ -1,4 +1,5 @@
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -19,6 +20,36 @@ def normalize_and_check_email(email):
         )
 
     return email
+
+
+
+def check_username_available(username):
+    # The DB constraint is case-sensitive; "TakenName" and "takenname" must
+    # not both exist (customers can also rename themselves - same rule).
+    if User.objects.filter(username__iexact=username).exists():
+        raise serializers.ValidationError("This username is already taken.")
+    return username
+
+
+def validate_registration_password(data):
+    # Run with a draft user so UserAttributeSimilarityValidator can reject
+    # e.g. a password equal to the username - the same rules as reset.
+    draft = User(
+        username=data.get("username", ""),
+        email=data.get("email", ""),
+        full_name=data.get("full_name", ""),
+    )
+    try:
+        validate_password(data["password"], user=draft)
+    except DjangoValidationError as e:
+        raise serializers.ValidationError({"password": e.messages})
+
+
+def run_registration(register, validated_data):
+    try:
+        return register(validated_data)
+    except DjangoValidationError as e:
+        raise serializers.ValidationError(e.messages)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -53,9 +84,10 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
+        # No username either: it's half of someone's login details and could
+        # help find them on other platforms.
         fields = [
             "id",
-            "username",
             "full_name",
             "role",
             "profile_picture",
@@ -67,7 +99,6 @@ class CustomerRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,
         min_length=8,
-        validators=[validate_password],
     )
     
     phone_number = serializers.CharField(
@@ -88,17 +119,23 @@ class CustomerRegisterSerializer(serializers.ModelSerializer):
     def validate_email(self, email):
         return normalize_and_check_email(email)
 
+    def validate_username(self, username):
+        return check_username_available(username)
+
+    def validate(self, data):
+        validate_registration_password(data)
+        return data
+
     def create(self, validated_data):
         from .services import register_customer
 
-        return register_customer(validated_data)
+        return run_registration(register_customer, validated_data)
 
 
 class ArtisanRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True,
         min_length=8,
-        validators=[validate_password],
     )
 
     phone_number = serializers.CharField(
@@ -107,7 +144,7 @@ class ArtisanRegisterSerializer(serializers.ModelSerializer):
 
     services = serializers.PrimaryKeyRelatedField(
         many=True,
-        queryset=Service.objects.all(),
+        queryset=Service.objects.filter(is_active=True),
     )
 
     class Meta:
@@ -124,6 +161,9 @@ class ArtisanRegisterSerializer(serializers.ModelSerializer):
     def validate_email(self, email):
         return normalize_and_check_email(email)
 
+    def validate_username(self, username):
+        return check_username_available(username)
+
     def validate_services(self, services):
         if len(services) > 3:
             raise serializers.ValidationError(
@@ -137,9 +177,13 @@ class ArtisanRegisterSerializer(serializers.ModelSerializer):
 
         return services
 
+    def validate(self, data):
+        validate_registration_password(data)
+        return data
+
     def create(self, validated_data):
         from .services import register_artisan
-        return register_artisan(validated_data)
+        return run_registration(register_artisan, validated_data)
     
     
 class CustomLoginSerializer(serializers.Serializer):
@@ -158,13 +202,14 @@ class CustomLoginSerializer(serializers.Serializer):
                 "Invalid username or password."
             )
 
-        if not user.is_active:
-            raise serializers.ValidationError(
-                "This account is disabled."
-            )
-
         if user.role == user.Role.ARTISAN:
-            artisan = user.artisan_profile
+            artisan = getattr(user, "artisan_profile", None)
+
+            if artisan is None:
+                raise serializers.ValidationError(
+                    "This account isn't set up correctly. "
+                    "Please contact the administrator."
+                )
 
             if artisan.verification_status == Artisan.VerificationStatus.PENDING:
                 raise serializers.ValidationError(

@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from accounts.models import User
 from artisans.models import Artisan
 from customers.models import Customer
+from services.models import Service
 from .services import (
     calculate_distance_km,
     create_saved_location,
@@ -257,6 +258,103 @@ class SearchCoordinateResolutionTests(TestCase):
             )
 
 
+class MapNearbyArtisanFlowTests(TestCase):
+    def setUp(self):
+        self.customer_user = User.objects.create_user(
+            username="map_customer",
+            email="map_customer@example.com",
+            password="testpassword123",
+            role=User.Role.CUSTOMER,
+        )
+        self.customer = Customer.objects.create(user=self.customer_user)
+        self.saved_location = create_saved_location(
+            customer=self.customer,
+            name="Home",
+            address="Home Address",
+            latitude=6.524400,
+            longitude=3.379200,
+        )
+
+        self.service = Service.objects.create(
+            name="Plumbing",
+            description="",
+            minimum_price=150,
+            maximum_price=800,
+            is_active=True,
+        )
+
+        self.nearby = self._create_artisan(
+            "nearby_map_artisan",
+            Artisan.VerificationStatus.VERIFIED,
+            latitude=6.524900,
+            longitude=3.379800,
+        )
+        self.pending = self._create_artisan(
+            "pending_map_artisan",
+            Artisan.VerificationStatus.PENDING,
+            latitude=6.525000,
+            longitude=3.380000,
+        )
+        self.far = self._create_artisan(
+            "far_map_artisan",
+            Artisan.VerificationStatus.VERIFIED,
+            latitude=6.700000,
+            longitude=3.500000,
+        )
+
+    def _create_artisan(self, username, verification_status, latitude, longitude):
+        user = User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="testpassword123",
+            role=User.Role.ARTISAN,
+        )
+        artisan = Artisan.objects.create(
+            user=user,
+            phone_number="08000000000",
+            verification_status=verification_status,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        artisan.services.add(self.service)
+        return artisan
+
+    def test_current_and_saved_modes_return_same_nearby_map_markers(self):
+        current_latitude = 6.524400
+        current_longitude = 3.379200
+
+        current_results = find_nearby_artisans(
+            current_latitude,
+            current_longitude,
+            service=self.service,
+        )
+        saved_latitude, saved_longitude = resolve_search_coordinates(
+            self.customer_user,
+            "saved",
+            location_id=self.saved_location.id,
+        )
+        saved_results = find_nearby_artisans(
+            saved_latitude,
+            saved_longitude,
+            service=self.service,
+        )
+
+        self.assertEqual(
+            [item["artisan"].pk for item in current_results],
+            [self.nearby.pk],
+        )
+        self.assertEqual(
+            [item["artisan"].pk for item in saved_results],
+            [self.nearby.pk],
+        )
+        self.assertNotIn(self.pending, [item["artisan"]
+                         for item in current_results])
+        self.assertNotIn(self.far, [item["artisan"]
+                         for item in current_results])
+        self.assertAlmostEqual(
+            current_results[0]["distance_km"], 0.11, places=1)
+
+
 def _nominatim_response(payload):
     response = MagicMock()
     response.read.return_value = json.dumps(payload).encode("utf-8")
@@ -273,14 +371,16 @@ class GeocodingTests(TestCase):
     @patch("locations.services.urlopen")
     def test_geocode_returns_candidate_places(self, mock_urlopen):
         mock_urlopen.return_value = _nominatim_response([
-            {"display_name": "Yaba, Lagos, Nigeria", "lat": "6.5095442", "lon": "3.3710936"},
+            {"display_name": "Yaba, Lagos, Nigeria",
+                "lat": "6.5095442", "lon": "3.3710936"},
         ])
 
         results = geocode_address("Yaba, Lagos")
 
         self.assertEqual(
             results,
-            [{"display_name": "Yaba, Lagos, Nigeria", "latitude": 6.509544, "longitude": 3.371094}],
+            [{"display_name": "Yaba, Lagos, Nigeria",
+                "latitude": 6.509544, "longitude": 3.371094}],
         )
 
         request = mock_urlopen.call_args[0][0]
@@ -303,17 +403,32 @@ class GeocodingTests(TestCase):
 
     @patch("locations.services.urlopen")
     def test_reverse_geocode_returns_address(self, mock_urlopen):
-        mock_urlopen.return_value = _nominatim_response(
-            {"display_name": "Herbert Macaulay Way, Yaba", "lat": "6.5244", "lon": "3.3792"}
-        )
+        mock_urlopen.return_value = _nominatim_response({
+            "display_name": "Herbert Macaulay Way, Yaba",
+            "lat": "6.5244",
+            "lon": "3.3792",
+            "address": {"country_code": "ng"},
+        })
 
         place = reverse_geocode(6.5244, 3.3792)
 
         self.assertEqual(place["display_name"], "Herbert Macaulay Way, Yaba")
 
     @patch("locations.services.urlopen")
+    def test_reverse_geocode_outside_allowed_countries_is_no_address(self, mock_urlopen):
+        mock_urlopen.return_value = _nominatim_response({
+            "display_name": "Westminster, London",
+            "lat": "51.5",
+            "lon": "-0.12",
+            "address": {"country_code": "gb"},
+        })
+
+        self.assertIsNone(reverse_geocode(51.5, -0.12))
+
+    @patch("locations.services.urlopen")
     def test_reverse_geocode_with_no_address_returns_none_and_is_cached(self, mock_urlopen):
-        mock_urlopen.return_value = _nominatim_response({"error": "Unable to geocode"})
+        mock_urlopen.return_value = _nominatim_response(
+            {"error": "Unable to geocode"})
 
         self.assertIsNone(reverse_geocode(0.0, 0.0))
         self.assertIsNone(reverse_geocode(0.0, 0.0))
@@ -426,3 +541,112 @@ class NearbyArtisanMarkerTests(TestCase):
         marker = self._markers()[0]
         self.assertEqual(marker["average_rating"], 4.5)
         self.assertEqual(marker["review_count"], 2)
+
+
+class InputHardeningTests(TestCase):
+
+    def test_nan_and_infinity_are_rejected(self):
+        from .serializers import (
+            NearbyArtisanQuerySerializer,
+            ReverseGeocodeQuerySerializer,
+        )
+
+        for value in ("nan", "inf", "-inf"):
+            self.assertFalse(
+                NearbyArtisanQuerySerializer(
+                    data={"latitude": value, "longitude": 3.3}
+                ).is_valid()
+            )
+            self.assertFalse(
+                ReverseGeocodeQuerySerializer(
+                    data={"latitude": 6.5, "longitude": value}
+                ).is_valid()
+            )
+
+    def test_saved_location_coordinates_must_be_on_earth(self):
+        from .serializers import SavedLocationSerializer
+
+        for latitude, longitude in ((500, 3.3), (6.5, -999)):
+            serializer = SavedLocationSerializer(data={
+                "name": "Home",
+                "address": "Somewhere",
+                "latitude": latitude,
+                "longitude": longitude,
+            })
+            self.assertFalse(serializer.is_valid())
+
+    @patch("locations.services.NOMINATIM_MIN_INTERVAL_SECONDS", 0)
+    @patch("locations.services.urlopen", side_effect=ConnectionResetError())
+    def test_dropped_connection_is_reported_as_unavailable(self, mock_urlopen):
+        cache.clear()
+        with self.assertRaises(GeocodingUnavailable):
+            geocode_address("Yaba, Lagos")
+
+    @patch("locations.services.NOMINATIM_MIN_INTERVAL_SECONDS", 0)
+    @patch("locations.services.urlopen")
+    def test_malformed_reply_is_reported_as_unavailable(self, mock_urlopen):
+        cache.clear()
+        mock_urlopen.return_value = _nominatim_response(
+            [{"display_name": "No coordinates"}])
+
+        with self.assertRaises(GeocodingUnavailable):
+            geocode_address("Yaba, Lagos")
+
+
+class CoordinatePrecisionTests(TestCase):
+
+    def test_extra_gps_decimals_are_rounded_not_rejected(self):
+        from .serializers import SavedLocationSerializer
+
+        serializer = SavedLocationSerializer(data={
+            "name": "Home",
+            "address": "Somewhere",
+            "latitude": "6.52440012",
+            "longitude": "3.37920049",
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(
+            str(serializer.validated_data["latitude"]), "6.524400")
+        self.assertEqual(
+            str(serializer.validated_data["longitude"]), "3.379200")
+
+
+class NearbyServiceFilterTests(TestCase):
+
+    def test_nearby_search_can_be_limited_to_one_service(self):
+        from services.models import Service
+
+        plumbing = Service.objects.create(
+            name="Plumbing", description="", minimum_price=1, maximum_price=2
+        )
+        painting = Service.objects.create(
+            name="Painting", description="", minimum_price=1, maximum_price=2
+        )
+
+        def artisan(username, service, latitude):
+            user = User.objects.create_user(
+                username=username,
+                email=f"{username}@example.com",
+                password="testpassword123",
+            )
+            created = Artisan.objects.create(
+                user=user,
+                phone_number="08000000000",
+                verification_status=Artisan.VerificationStatus.VERIFIED,
+                latitude=latitude,
+                longitude=3.380000,
+            )
+            created.services.add(service)
+            return created
+
+        far_plumber = artisan("far_plumber", plumbing, 6.560000)
+        near_plumber = artisan("near_plumber", plumbing, 6.530000)
+        artisan("painter", painting, 6.530000)
+
+        results = [
+            item["artisan"]
+            for item in find_nearby_artisans(6.524400, 3.379200, service=plumbing)
+        ]
+
+        self.assertEqual(results, [near_plumber, far_plumber])

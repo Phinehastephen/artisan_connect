@@ -6,6 +6,8 @@ from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
+from accounts.services import run_in_background
+
 from .models import Booking
 
 logger = logging.getLogger(__name__)
@@ -81,7 +83,14 @@ def complete_booking(booking):
         
     booking.status = Booking.Status.COMPLETED
     booking.completed_at = timezone.now()
-    booking.save(update_fields=["status", "completed_at"])
+    # A job reopened after a dispute gets a fresh set of reminders and a
+    # fresh 3-day window.
+    booking.confirmation_reminders_sent = 0
+    booking.save(update_fields=[
+        "status",
+        "completed_at",
+        "confirmation_reminders_sent",
+    ])
     return booking
 
 
@@ -146,22 +155,124 @@ def confirm_completion(booking):
     return _finalize(booking, Booking.FinalizationMethod.CUSTOMER_CONFIRMED)
 
 
+MIN_DISPUTE_REASON_LENGTH = 20
+
+
+@transaction.atomic
+def dispute_completion(booking, reason):
+    # The customer says the job isn't done. Reminders and auto-finalize only
+    # look at COMPLETED bookings, so moving to DISPUTED stops both until an
+    # admin steps in.
+    _lock(booking)
+
+    if booking.status != Booking.Status.COMPLETED:
+        raise ValidationError(
+            "Only bookings the artisan has marked complete can be disputed."
+        )
+
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if len(reason) < MIN_DISPUTE_REASON_LENGTH:
+        raise ValidationError(
+            f"Please explain why the job isn't done "
+            f"(at least {MIN_DISPUTE_REASON_LENGTH} characters)."
+        )
+
+    booking.status = Booking.Status.DISPUTED
+    booking.dispute_reason = reason
+    booking.disputed_at = timezone.now()
+    booking.save(update_fields=["status", "dispute_reason", "disputed_at"])
+
+    # Only after the dispute is saved, and off the request thread so the
+    # customer isn't kept waiting on the mail server.
+    booking_id = booking.pk
+    transaction.on_commit(
+        lambda: run_in_background(send_dispute_notification, booking_id)
+    )
+    return booking
+
+
+def send_dispute_notification(booking_id):
+    # Admins have no in-app notifications yet (planned Notifications
+    # module), so a dispute is emailed to every active admin.
+    from accounts.models import User
+
+    try:
+        booking = Booking.objects.select_related(
+            "customer__user", "artisan__user", "service"
+        ).get(pk=booking_id)
+
+        recipients = list(
+            User.objects.filter(role=User.Role.ADMIN, is_active=True)
+            .exclude(email="")
+            .values_list("email", flat=True)
+        )
+        if not recipients:
+            logger.warning(
+                "Booking %s was disputed but there are no admins to notify",
+                booking_id,
+            )
+            return
+
+        artisan_name = (
+            booking.artisan.business_name or booking.artisan.user.full_name
+        )
+        send_mail(
+            subject=f"Dispute opened on booking #{booking.id}",
+            message=(
+                f"{booking.customer.user.full_name} says their "
+                f"{booking.service.name} job with {artisan_name} "
+                f"(booking #{booking.id}) isn't done.\n\n"
+                f"Reason given:\n{booking.dispute_reason}\n\n"
+                "Reminders and auto-confirmation are paused until an admin "
+                "decides. To settle it, either send the job back to the "
+                "artisan to fix:\n"
+                f"  POST /api/v1/bookings/status/{booking.id}/reopen\n"
+                "or close the booking:\n"
+                f"  POST /api/v1/bookings/status/{booking.id}/finalize"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=recipients,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to send dispute notification for booking %s", booking_id
+        )
+
+
+@transaction.atomic
+def reopen_booking(booking):
+    # Admin sends a disputed job back to the artisan to fix. The dispute
+    # reason is kept so the artisan can see what needs fixing.
+    _lock(booking)
+
+    if booking.status != Booking.Status.DISPUTED:
+        raise ValidationError("Only disputed bookings can be reopened.")
+
+    booking.status = Booking.Status.IN_PROGRESS
+    booking.completed_at = None
+    booking.save(update_fields=["status", "completed_at"])
+    return booking
+
+
 @transaction.atomic
 def finalize_booking(booking):
     # Admin override, e.g. to settle a dispute.
     _lock(booking)
 
-    if booking.status != Booking.Status.COMPLETED:
-        raise ValidationError("Only completed bookings can be finalized.")
+    if booking.status not in (Booking.Status.COMPLETED, Booking.Status.DISPUTED):
+        raise ValidationError(
+            "Only completed or disputed bookings can be finalized."
+        )
 
     return _finalize(booking, Booking.FinalizationMethod.ADMIN)
 
 
 def _send_confirmation_reminder(booking, is_final):
-    artisan_name = booking.artisan.business_name or booking.artisan.user.full_name
-    deadline = booking.completed_at + AUTO_FINALIZE_AFTER
-
     try:
+        artisan_name = (
+            booking.artisan.business_name or booking.artisan.user.full_name
+        )
+        deadline = booking.completed_at + AUTO_FINALIZE_AFTER
         send_mail(
             subject="Please confirm your completed Artisan Connect job",
             message=(
@@ -187,9 +298,15 @@ def send_due_confirmation_reminders(now=None):
     now = now or timezone.now()
     sent = 0
 
+    # Bookings past the deadline are auto-finalized instead; a reminder
+    # promising a date that has already passed would be misleading.
     candidates = Booking.objects.filter(
         status=Booking.Status.COMPLETED,
         confirmation_reminders_sent__lt=len(CONFIRMATION_REMINDER_SCHEDULE),
+        completed_at__gt=now - AUTO_FINALIZE_AFTER,
+        customer__isnull=False,
+        artisan__isnull=False,
+        service__isnull=False,
     ).values_list("pk", flat=True)
 
     for pk in candidates:
@@ -225,6 +342,7 @@ def auto_finalize_overdue_bookings(now=None):
 
     overdue = Booking.objects.filter(
         status=Booking.Status.COMPLETED,
+        completed_at__isnull=False,
         completed_at__lte=now - AUTO_FINALIZE_AFTER,
     ).values_list("pk", flat=True)
 

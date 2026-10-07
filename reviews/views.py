@@ -8,8 +8,7 @@ from .models import Review
 from .serializers import ReviewEditSerializer, ReviewSerializer
 from .services import create_review, edit_review
 
-from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 
 class ReviewListCreateView(APIView):
     def get_permissions(self):
@@ -78,7 +77,7 @@ class ReviewDetailView(APIView):
                     review=review,
                     customer=request.user.customer_profile,
                     rating=serializer.validated_data["rating"],
-                    comment=serializer.validated_data.get("comment", ""),
+                    comment=serializer.validated_data.get("comment", review.comment),
                 )
                 return Response(
                     ReviewSerializer(updated_review).data,

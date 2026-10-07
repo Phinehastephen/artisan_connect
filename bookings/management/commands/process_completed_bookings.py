@@ -14,8 +14,8 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
-        reminders = send_due_confirmation_reminders()
         finalized = auto_finalize_overdue_bookings()
+        reminders = send_due_confirmation_reminders()
 
         self.stdout.write(
             f"Sent {reminders} reminder(s); auto-finalized {finalized} booking(s)."

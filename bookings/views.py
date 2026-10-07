@@ -15,7 +15,9 @@ from .services import (
     start_booking,
     complete_booking,
     confirm_completion,
+    dispute_completion,
     finalize_booking,
+    reopen_booking,
     reject_booking,
     cancel_booking,
 )
@@ -116,10 +118,10 @@ class BookingStatusActionView(APIView):
     permission_classes = [IsAuthenticated]
 
     ARTISAN_ACTIONS = {"accept", "start", "complete", "reject"}
-    CUSTOMER_ACTIONS = {"cancel", "confirm"}
+    CUSTOMER_ACTIONS = {"cancel", "confirm", "disagree"}
     # Normally a booking finalizes when the customer confirms (or after 3
-    # days); a manual finalize is an admin override for disputes.
-    ADMIN_ACTIONS = {"finalize"}
+    # days); admins settle disputes by finalizing or reopening the job.
+    ADMIN_ACTIONS = {"finalize", "reopen"}
 
     def post(self, request, pk, action):
         try:
@@ -135,7 +137,11 @@ class BookingStatusActionView(APIView):
             "start": start_booking,
             "complete": complete_booking,
             "confirm": confirm_completion,
+            "disagree": lambda b: dispute_completion(
+                b, request.data.get("reason")
+            ),
             "finalize": finalize_booking,
+            "reopen": reopen_booking,
             "reject": reject_booking,
             "cancel": cancel_booking,
         }

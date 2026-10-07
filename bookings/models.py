@@ -7,6 +7,7 @@ class Booking(models.Model):
         ACCEPTED = "ACCEPTED", "Accepted"
         IN_PROGRESS = "IN_PROGRESS", "In Progress"
         COMPLETED = "COMPLETED", "Completed"
+        DISPUTED = "DISPUTED", "Disputed"
         FINALIZED = "FINALIZED", "Finalized"
         CANCELLED = "CANCELLED", "Cancelled"
 
@@ -92,6 +93,18 @@ class Booking(models.Model):
 
     confirmation_reminders_sent = models.PositiveSmallIntegerField(
         default=0,
+    )
+
+    # Why the customer disagreed the job was done. Seen by the customer, the
+    # artisan and admins only.
+    dispute_reason = models.TextField(
+        null=True,
+        blank=True,
+    )
+
+    disputed_at = models.DateTimeField(
+        null=True,
+        blank=True,
     )
 
     def __str__(self):

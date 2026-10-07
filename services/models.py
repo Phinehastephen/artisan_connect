@@ -47,3 +47,38 @@ class Service(models.Model):
 
     def __str__(self):
         return self.name
+
+class ServiceKeyword(models.Model):
+    # Alternative words customers use for a service ("pipe", "leaking tap"
+    # -> Plumbing). Kept out of Service so the frozen table stays as it is
+    # and admins can add words without a code change.
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.CASCADE,
+        related_name="keywords",
+    )
+
+    keyword = models.CharField(
+        max_length=100,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["service", "keyword"],
+                name="unique_keyword_per_service",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        from .text import normalize_text
+
+        self.keyword = normalize_text(self.keyword)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.keyword} -> {self.service.name}"

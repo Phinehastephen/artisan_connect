@@ -8,7 +8,7 @@ import threading
 import time
 from decimal import Decimal
 from math import radians, sin, cos, sqrt, atan2
-from urllib.error import URLError
+from http.client import HTTPException
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -119,7 +119,7 @@ def resolve_search_coordinates(
 
 
 # find nearby artisans within the configured nearby radius of the supplied coordinates
-def find_nearby_artisans(latitude, longitude):
+def find_nearby_artisans(latitude, longitude, service=None):
 
     nearby_artisans = []
 
@@ -137,6 +137,9 @@ def find_nearby_artisans(latitude, longitude):
         )
     )
 
+    if service is not None:
+        artisans = artisans.filter(services=service)
+
     for artisan in artisans:
 
         distance_km = calculate_distance_km(
@@ -152,11 +155,14 @@ def find_nearby_artisans(latitude, longitude):
                 "distance_km": round(distance_km, 2),
             })
 
-    nearby_artisans.sort(
-        key=lambda item: item["distance_km"]
-    )
+    return rank_artisans(nearby_artisans)
 
-    return nearby_artisans
+
+def rank_artisans(nearby_artisans):
+    # The "recommendation ranking" step. V1: closest first. The planned
+    # recommendation engine replaces this (rating, completed jobs, ...)
+    # without changing how artisans are found.
+    return sorted(nearby_artisans, key=lambda item: item["distance_km"])
 
 
 # openstreetmap 
@@ -196,7 +202,7 @@ def _nominatim_get(path, params):
         try:
             with urlopen(request, timeout=settings.NOMINATIM_TIMEOUT) as response:
                 return json.loads(response.read().decode("utf-8"))
-        except (URLError, TimeoutError, ValueError) as error:
+        except (OSError, HTTPException, ValueError) as error:
             logger.warning("Nominatim request failed: %s", error)
             raise GeocodingUnavailable(
                 "The map service is unavailable right now. Please try again shortly."
@@ -211,6 +217,15 @@ def _format_place(place):
         "latitude": round(float(place["lat"]), 6),
         "longitude": round(float(place["lon"]), 6),
     }
+
+
+def _format_places(places):
+    try:
+        return [_format_place(place) for place in places]
+    except (KeyError, TypeError, ValueError) as error:
+        raise GeocodingUnavailable(
+            "The map service returned an unexpected response."
+        ) from error
 
 
 def geocode_address(query):
@@ -233,7 +248,7 @@ def geocode_address(query):
             "The map service returned an unexpected response."
         )
 
-    results = [_format_place(place) for place in places]
+    results = _format_places(places)
     cache.set(cache_key, results, GEOCODE_CACHE_TTL_SECONDS)
 
     return results
@@ -260,7 +275,17 @@ def reverse_geocode(latitude, longitude):
             "The map service returned an unexpected response."
         )
 
-    result = {} if "error" in place else _format_place(place)
+    allowed = [
+        code.strip().lower()
+        for code in settings.NOMINATIM_COUNTRY_CODES.split(",")
+        if code.strip()
+    ]
+    country = (place.get("address") or {}).get("country_code", "").lower()
+
+    if "error" in place or (allowed and country not in allowed):
+        result = {}
+    else:
+        result = _format_places([place])[0]
     cache.set(cache_key, result, GEOCODE_CACHE_TTL_SECONDS)
 
     return result or None

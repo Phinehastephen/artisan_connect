@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
 from .models import Service
 
@@ -25,6 +26,14 @@ def create_service(
     return service
 
 
+def recalculate_price_ranges_for_service(service):
+    from artisans.services import recalculate_artisan_price_range
+
+    for artisan in service.artisans.all():
+        recalculate_artisan_price_range(artisan)
+
+
+@transaction.atomic
 def update_service(
     *,
     service,
@@ -51,5 +60,7 @@ def update_service(
 
     service.full_clean()
     service.save()
+
+    recalculate_price_ranges_for_service(service)
 
     return service

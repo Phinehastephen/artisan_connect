@@ -384,6 +384,21 @@ class RolePermissionTests(TestCase):
             role=User.Role.ADMIN,
         )
 
+        Customer.objects.create(user=self.customer)
+        Artisan.objects.create(user=self.artisan, phone_number="08000000000")
+
+    def test_role_without_profile_is_denied(self):
+        orphan = User.objects.create_user(
+            username="noprofile",
+            email="noprofile@test.com",
+            password="TestPassword123!",
+            role=User.Role.CUSTOMER,
+        )
+        request = self.factory.get("/")
+        request.user = orphan
+
+        self.assertFalse(IsCustomer().has_permission(request, None))
+
     def test_customer_permission(self):
         request = self.factory.get("/")
         request.user = self.customer
@@ -443,3 +458,130 @@ class RolePermissionTests(TestCase):
         self.assertFalse(
             permission.has_permission(request, None)
         )
+
+
+class AccountIntegrityTests(TestCase):
+
+    def test_createsuperuser_gets_admin_role(self):
+        admin = User.objects.create_superuser(
+            username="boss",
+            email="boss@example.com",
+            password="testpassword123",
+        )
+
+        self.assertEqual(admin.role, User.Role.ADMIN)
+
+    def test_email_is_stored_lowercase_from_any_path(self):
+        user = User.objects.create_user(
+            username="mixedcase",
+            email="  Mixed.Case@Example.COM ",
+            password="testpassword123",
+        )
+
+        self.assertEqual(user.email, "mixed.case@example.com")
+
+    def test_registration_rejects_password_like_username(self):
+        from .serializers import CustomerRegisterSerializer
+
+        serializer = CustomerRegisterSerializer(data={
+            "username": "stephen123x",
+            "email": "stephen@example.com",
+            "full_name": "Stephen",
+            "password": "stephen123x",
+            "phone_number": "08000000000",
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("password", serializer.errors)
+
+    def test_registration_rejects_inactive_service(self):
+        from .serializers import ArtisanRegisterSerializer
+
+        inactive = Service.objects.create(
+            name="Old Service",
+            description="No longer offered",
+            minimum_price=1000,
+            maximum_price=2000,
+            is_active=False,
+        )
+        serializer = ArtisanRegisterSerializer(data={
+            "username": "newartisan",
+            "email": "newartisan@example.com",
+            "full_name": "New Artisan",
+            "password": "StrongPass123!",
+            "phone_number": "08000000000",
+            "services": [inactive.id],
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("services", serializer.errors)
+
+    def test_deactivated_user_cannot_finish_password_reset(self):
+        user = User.objects.create_user(
+            username="leaver",
+            email="leaver@example.com",
+            password="OldPassword123!",
+        )
+        with self.settings(SEND_EMAIL_IN_BACKGROUND=False):
+            with self.captureOnCommitCallbacks(execute=True):
+                request_password_reset(user.email)
+        code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+        reset_token = verify_password_reset_code(user.email, code)
+
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+
+        with self.assertRaises(ValidationError):
+            reset_password(reset_token, "BrandNewPass456!")
+
+
+class UsernameAndAdminTests(TestCase):
+
+    def test_registration_rejects_username_differing_only_in_case(self):
+        from .serializers import CustomerRegisterSerializer
+
+        User.objects.create_user(
+            username="TakenName",
+            email="taken@example.com",
+            password="testpassword123",
+        )
+        serializer = CustomerRegisterSerializer(data={
+            "username": "takenname",
+            "email": "other@example.com",
+            "full_name": "Someone Else",
+            "password": "StrongPass123!",
+            "phone_number": "08000000000",
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("username", serializer.errors)
+
+    def test_model_validation_rejects_email_differing_only_in_case(self):
+        User.objects.create_user(
+            username="first",
+            email="taken@example.com",
+            password="testpassword123",
+        )
+        duplicate = User(username="second", email="TAKEN@Example.com")
+        duplicate.set_password("testpassword123")
+
+        with self.assertRaises(ValidationError) as caught:
+            duplicate.full_clean()
+        self.assertIn("email", caught.exception.message_dict)
+
+    def test_admin_add_form_only_creates_admins(self):
+        from django.contrib.admin.sites import site
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = User.objects.create_superuser(
+            username="boss", email="boss@example.com", password="testpassword123"
+        )
+        form = site._registry[User].get_form(request, obj=None)
+
+        self.assertEqual(
+            [value for value, _ in form.base_fields["role"].choices],
+            [User.Role.ADMIN],
+        )
+        self.assertIn("full_name", form.base_fields)
+        self.assertIn("email_verified", form.base_fields)

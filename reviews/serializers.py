@@ -50,11 +50,6 @@ class ReviewSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Rating must be between 1.0 and 5.0.")
         return value
 
-    def update(self, instance, validated_data):
-        """Automatically set edited=True whenever a review comment or rating is modified."""
-        if "comment" in validated_data or "rating" in validated_data:
-            instance.edited = True
-        return super().update(instance, validated_data)
 
 
 class ReviewEditSerializer(serializers.Serializer):

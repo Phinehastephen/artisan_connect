@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Max, Min
@@ -9,20 +7,18 @@ from dateutil.relativedelta import relativedelta
 from .models import Artisan
 
 
-PROFILE_CHANGE_COOLDOWN = timedelta(days=6 * 30)
-
 MAX_ARTISAN_SERVICES = 3
 
 
-ARTISAN_OWN_FIELDS = {
-    "business_name",
-    "phone_number",
-    "default_location",
-}
+def _lock(artisan):
+    Artisan.objects.select_for_update().filter(pk=artisan.pk).first()
+    artisan.refresh_from_db()
 
 
 @transaction.atomic
 def add_service_to_artisan(artisan, service):
+    _lock(artisan)
+
     if artisan.services.filter(id=service.id).exists():
         raise ValidationError(
             "This service is already assigned to the artisan."
@@ -46,7 +42,8 @@ def add_service_to_artisan(artisan, service):
 
 
 def recalculate_artisan_price_range(artisan):
-    price_range = artisan.services.aggregate(
+    # Inactive services can't be booked, so they don't set the range.
+    price_range = artisan.services.filter(is_active=True).aggregate(
         starting_price=Min("minimum_price"),
         maximum_price=Max("maximum_price"),
     )
@@ -56,8 +53,19 @@ def recalculate_artisan_price_range(artisan):
     artisan.save(update_fields=["starting_price", "maximum_price"])
 
 
+def _ensure_pending(artisan):
+    if artisan.verification_status != Artisan.VerificationStatus.PENDING:
+        raise ValidationError(
+            "Only pending artisans can be approved or rejected."
+        )
+
+
 @transaction.atomic
 def approve_artisan(artisan):
+    # Locked so two admins acting at the same moment can't both decide.
+    _lock(artisan)
+    _ensure_pending(artisan)
+
     artisan.verification_status = Artisan.VerificationStatus.VERIFIED
     artisan.save(update_fields=["verification_status"])
 
@@ -66,6 +74,9 @@ def approve_artisan(artisan):
 
 @transaction.atomic
 def reject_artisan(artisan):
+    _lock(artisan)
+    _ensure_pending(artisan)
+
     artisan.verification_status = Artisan.VerificationStatus.REJECTED
     artisan.save(update_fields=["verification_status"])
 
@@ -82,6 +93,19 @@ def update_artisan_profile(artisan, **fields):
 
     user = artisan.user
     now = timezone.now()
+
+    # Apps often send the whole form; an unchanged value mustn't start (or
+    # trip) a 6-month cooldown.
+    current = {
+        "full_name": user.full_name,
+        "profile_picture": user.profile_picture,
+        "business_name": artisan.business_name,
+    }
+    fields = {
+        name: value
+        for name, value in fields.items()
+        if not (name in current and (value or None) == (current[name] or None))
+    }
 
     # Full name
     if "full_name" in fields:

@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Booking
 from artisans.models import Artisan
 from services.models import Service
+from locations.serializers import CoordinateField
 from customers.serializers import CustomerPublicSerializer
 from artisans.serializers import ArtisanPublicSerializer
 from services.serializers import ServiceSerializer
@@ -44,6 +45,8 @@ class BookingSerializer(serializers.ModelSerializer):
             "finalized_at",
             "finalization_method",
             "awaiting_customer_confirmation",
+            "dispute_reason",
+            "disputed_at",
         ]
 
         read_only_fields = fields
@@ -87,22 +90,10 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     service = serializers.PrimaryKeyRelatedField(
         queryset=Service.objects.all(),
     )
-    job_latitude = serializers.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        min_value=-90,
-        max_value=90,
-        required=False,
-        allow_null=True,
-    )
-    job_longitude = serializers.DecimalField(
-        max_digits=9,
-        decimal_places=6,
-        min_value=-180,
-        max_value=180,
-        required=False,
-        allow_null=True,
-    )
+    # The artisan can't travel to a job without these.
+    job_address = serializers.CharField(max_length=255)
+    job_latitude = CoordinateField(min_value=-90, max_value=90)
+    job_longitude = CoordinateField(min_value=-180, max_value=180)
 
     class Meta:
         model = Booking
@@ -123,10 +114,11 @@ class BookingSummarySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Booking
+        # No status: whether a job was disputed stays between the two
+        # parties and admins.
         fields = [
             "id",
             "service_detail",
-            "status",
             "created_at",
             "completed_at",
         ]

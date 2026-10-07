@@ -4,6 +4,8 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from bookings.models import Booking
+
 from .models import Review
 
 
@@ -14,12 +16,15 @@ def create_review(
     rating,
     comment=None,
 ):
+    Booking.objects.select_for_update().filter(pk=booking.pk).first()
+    booking.refresh_from_db()
+
     if booking.customer_id != customer.id:
         raise ValidationError(
             "You can only review your own booking."
         )
 
-    if booking.status not in ("COMPLETED", "FINALIZED"):
+    if booking.status not in ("COMPLETED", "DISPUTED", "FINALIZED"):
         raise ValidationError(
             "Only completed bookings can be reviewed."
         )
@@ -44,6 +49,9 @@ def create_review(
     
 @transaction.atomic
 def edit_review(review, customer, rating, comment=None):
+    Review.objects.select_for_update().filter(pk=review.pk).first()
+    review.refresh_from_db()
+
     if review.customer_id != customer.id:
         raise ValidationError(
             "You can only edit your own review."

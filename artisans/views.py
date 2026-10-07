@@ -44,18 +44,18 @@ class ArtisanVerificationAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if artisan.verification_status != Artisan.VerificationStatus.PENDING:
+        try:
+            if action == "approve":
+                artisan = approve_artisan(artisan)
+                message = "Artisan approved successfully."
+            else:
+                artisan = reject_artisan(artisan)
+                message = "Artisan rejected successfully."
+        except ValidationError as e:
             return Response(
-                {"detail": "Only pending artisans can be approved or rejected."},
+                {"detail": e.messages[0]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        if action == "approve":
-            artisan = approve_artisan(artisan)
-            message = "Artisan approved successfully."
-        else:
-            artisan = reject_artisan(artisan)
-            message = "Artisan rejected successfully."
 
         return Response(
             {

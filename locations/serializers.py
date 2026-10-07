@@ -1,10 +1,32 @@
+import math
+
 from rest_framework import serializers
+from services.models import Service
+
 from .models import SavedLocation
 from .services import MAP_COORDINATE_DECIMALS
 
 
+def finite(value):
+    if not math.isfinite(value):
+        raise serializers.ValidationError("A valid number is required.")
+
+
+class CoordinateField(serializers.DecimalField):
+    # Phone GPS often has 7+ decimal places; round to the stored 6 (~0.1 m)
+    # instead of rejecting the request.
+    def __init__(self, **kwargs):
+        super().__init__(max_digits=9, decimal_places=6, **kwargs)
+
+    def validate_precision(self, value):
+        return value
+
+
 class SavedLocationSerializer(serializers.ModelSerializer):
     """Serializer matching the exact SavedLocation model schema."""
+
+    latitude = CoordinateField(min_value=-90, max_value=90)
+    longitude = CoordinateField(min_value=-180, max_value=180)
 
     class Meta:
         model = SavedLocation
@@ -36,6 +58,7 @@ class NearbyArtisanQuerySerializer(serializers.Serializer):
     )
     latitude = serializers.FloatField(
         required=False,
+        validators=[finite],
         min_value=-90,
         max_value=90,
         error_messages={
@@ -45,6 +68,7 @@ class NearbyArtisanQuerySerializer(serializers.Serializer):
     )
     longitude = serializers.FloatField(
         required=False,
+        validators=[finite],
         min_value=-180,
         max_value=180,
         error_messages={
@@ -53,6 +77,10 @@ class NearbyArtisanQuerySerializer(serializers.Serializer):
         },
     )
     location_id = serializers.IntegerField(required=False, min_value=1)
+    service = serializers.PrimaryKeyRelatedField(
+        queryset=Service.objects.filter(is_active=True),
+        required=False,
+    )
 
     def validate(self, data):
         if data["location_type"] == self.LOCATION_TYPE_SAVED:
@@ -109,5 +137,5 @@ class GeocodeQuerySerializer(serializers.Serializer):
 
 
 class ReverseGeocodeQuerySerializer(serializers.Serializer):
-    latitude = serializers.FloatField(min_value=-90, max_value=90)
-    longitude = serializers.FloatField(min_value=-180, max_value=180)
+    latitude = serializers.FloatField(min_value=-90, max_value=90, validators=[finite])
+    longitude = serializers.FloatField(min_value=-180, max_value=180, validators=[finite])

@@ -29,6 +29,8 @@ from .services import (
 
 class CustomerRegisterAPIView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "registration"
 
     def post(self, request, *args, **kwargs):
 
@@ -52,6 +54,8 @@ class CustomerRegisterAPIView(APIView):
 
 class ArtisanRegisterAPIView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "registration"
     
     def post(self, request, *args, **kwargs):
 
@@ -73,7 +77,9 @@ class ArtisanRegisterAPIView(APIView):
         )
         
 class CustomJWTLoginView(APIView):
-    permission_classes = [AllowAny] # Bypass global IsAuthenticated requirement
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
 
     def post(self, request, *args, **kwargs):
         serializer = CustomLoginSerializer(data=request.data)

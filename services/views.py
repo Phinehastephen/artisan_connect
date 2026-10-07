@@ -15,9 +15,10 @@ class ServiceListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        services = Service.objects.filter(
-            is_active=True
-        ).order_by("name")
+        services = Service.objects.all()
+        if not IsAdmin().has_permission(request, self):
+            services = services.filter(is_active=True)
+        services = services.order_by("name")
 
         serializer = ServiceSerializer(
             services,
@@ -55,9 +56,9 @@ class ServiceListCreateAPIView(APIView):
                     True
                 ),
             )
-        except Exception as error:
+        except ValidationError as error:
             return Response(
-                {"detail": str(error)},
+                {"detail": error.messages},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

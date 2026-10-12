@@ -7,12 +7,16 @@ from django.core.exceptions import ValidationError
 
 from accounts.permissions import IsCustomer
 from locations.models import SavedLocation
-from locations.serializers import NearbyArtisanMarkerSerializer
-from locations.services import find_nearby_artisans, resolve_search_coordinates
+from locations.services import resolve_search_coordinates
+from recommendations.services import rank_artisans
 from services.models import Service
 
 from .models import SearchLog
-from .serializers import ServiceBriefSerializer, SmartSearchQuerySerializer
+from .serializers import (
+    ServiceBriefSerializer,
+    SmartSearchQuerySerializer,
+    SmartSearchRankedArtisanSerializer,
+)
 from .services import log_search, match_service
 
 
@@ -36,6 +40,7 @@ class SmartSearchView(APIView):
             return Response(query.errors, status=status.HTTP_400_BAD_REQUEST)
 
         data = query.validated_data
+        result = match_service(data["q"])
 
         try:
             latitude, longitude = resolve_search_coordinates(
@@ -53,7 +58,6 @@ class SmartSearchView(APIView):
         except ValidationError as e:
             return Response({"error": e.messages}, status=status.HTTP_400_BAD_REQUEST)
 
-        result = match_service(data["q"])
         log_search(request.user.customer_profile, data["q"], result)
 
         response = {
@@ -62,8 +66,12 @@ class SmartSearchView(APIView):
         }
 
         if result.confidence == SearchLog.Confidence.CONFIDENT:
-            nearby = find_nearby_artisans(latitude, longitude, service=result.service)
-            if nearby:
+            ranked = rank_artisans(
+                latitude=latitude,
+                longitude=longitude,
+                service_id=result.service.id,
+            )
+            if ranked:
                 message = f"Showing {result.service.name} artisans near you."
             else:
                 message = f"No {result.service.name} artisans found within your area."
@@ -71,7 +79,10 @@ class SmartSearchView(APIView):
                 "message": message,
                 "service": ServiceBriefSerializer(result.service).data,
                 "origin": {"latitude": float(latitude), "longitude": float(longitude)},
-                "results": NearbyArtisanMarkerSerializer(nearby, many=True).data,
+                "results": SmartSearchRankedArtisanSerializer(
+                    ranked,
+                    many=True,
+                ).data,
             })
         elif result.confidence == SearchLog.Confidence.UNSURE:
             response.update({

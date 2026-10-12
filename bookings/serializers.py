@@ -84,27 +84,114 @@ class BookingSerializer(serializers.ModelSerializer):
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
+    JOB_LOCATION_TYPES = (
+        ("saved", "Saved location"),
+        ("current", "Current location"),
+        ("custom", "Custom address"),
+    )
+
+    job_location_type = serializers.ChoiceField(
+        choices=JOB_LOCATION_TYPES
+    )
+
+    job_location_id = serializers.IntegerField(
+        required=False,
+        min_value=1,
+    )
+
     artisan = serializers.PrimaryKeyRelatedField(
         queryset=Artisan.objects.all(),
     )
+
     service = serializers.PrimaryKeyRelatedField(
-        queryset=Service.objects.all(),
+        queryset=Service.objects.filter(is_active=True),
     )
-    # The artisan can't travel to a job without these.
-    job_address = serializers.CharField(max_length=255)
-    job_latitude = CoordinateField(min_value=-90, max_value=90)
-    job_longitude = CoordinateField(min_value=-180, max_value=180)
+
+    job_address = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=255,
+    )
+
+    job_latitude = CoordinateField(
+        required=False,
+        min_value=-90,
+        max_value=90,
+    )
+
+    job_longitude = CoordinateField(
+        required=False,
+        min_value=-180,
+        max_value=180,
+    )
 
     class Meta:
         model = Booking
         fields = [
             "artisan",
             "service",
+            "job_location_type",
+            "job_location_id",
             "job_address",
             "job_latitude",
             "job_longitude",
         ]
 
+    def validate(self, attrs):
+        location_type = attrs["job_location_type"]
+
+        location_id = attrs.get("job_location_id")
+        address = attrs.get("job_address")
+        latitude = attrs.get("job_latitude")
+        longitude = attrs.get("job_longitude")
+
+        if location_type == "saved":
+            if location_id is None:
+                raise serializers.ValidationError({
+                    "job_location_id": (
+                        "Select a saved location."
+                    )
+                })
+
+            if address is not None or latitude is not None or longitude is not None:
+                raise serializers.ValidationError(
+                    "For a saved location, submit only "
+                    "job_location_type and job_location_id."
+                )
+
+        elif location_type == "current":
+            if latitude is None or longitude is None:
+                raise serializers.ValidationError({
+                    "job_latitude": (
+                        "Current location requires latitude "
+                        "and longitude."
+                    ),
+                    "job_longitude": (
+                        "Current location requires latitude "
+                        "and longitude."
+                    ),
+                })
+
+            if location_id is not None or address is not None:
+                raise serializers.ValidationError(
+                    "For current location, submit coordinates "
+                    "without a saved location ID or address."
+                )
+
+        elif location_type == "custom":
+            if not address or latitude is None or longitude is None:
+                raise serializers.ValidationError(
+                    "A custom location requires an address, "
+                    "latitude, and longitude."
+                )
+
+            if location_id is not None:
+                raise serializers.ValidationError(
+                    "A custom location must not include "
+                    "a saved location ID."
+                )
+
+        return attrs
 
 class BookingSummarySerializer(serializers.ModelSerializer):
     """Minimal booking info for places visible beyond the two parties

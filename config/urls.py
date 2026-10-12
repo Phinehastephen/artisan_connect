@@ -61,4 +61,9 @@ urlpatterns = [
         "api/v1/ai/",
         include("ai.urls"),
     ),
+    
+    path(
+    "api/v1/recommendations/",
+    include("recommendations.urls"),
+    ),
 ]

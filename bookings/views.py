@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from accounts.models import User
 from accounts.permissions import IsAdmin, IsCustomer, IsArtisan
+from locations.models import SavedLocation
 from .models import Booking
 from .permissions import IsBookingCustomer, IsBookingArtisan
 from .serializers import BookingCreateSerializer, BookingSerializer
@@ -21,6 +22,12 @@ from .services import (
     reject_booking,
     cancel_booking,
 )
+
+from locations.services import (
+    resolve_booking_location,
+    GeocodingUnavailable,
+)
+
 
 
 class BookingListAPIView(APIView):
@@ -53,35 +60,58 @@ class BookCreateAPIView(APIView):
     def post(self, request, *args, **kwargs):
         serializer = BookingCreateSerializer(data=request.data)
 
-        if serializer.is_valid():
-            try:
-                booking = create_booking(
-                    customer=request.user.customer_profile,
-                    artisan=serializer.validated_data["artisan"],
-                    service=serializer.validated_data["service"],
-                    job_address=serializer.validated_data.get("job_address"),
-                    job_latitude=serializer.validated_data.get("job_latitude"),
-                    job_longitude=serializer.validated_data.get("job_longitude"),
-                )
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-                return Response(
-                    BookingSerializer(
-                        booking, context={"request": request}
-                    ).data,
-                    status=status.HTTP_201_CREATED
-                )
+        data = serializer.validated_data
 
-            except ValidationError as e:
-                return Response(
-                    {"error": e.messages},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+        try:
+            location = resolve_booking_location(
+                user=request.user,
+                location_type=data["job_location_type"],
+                location_id=data.get("job_location_id"),
+                address=data.get("job_address"),
+                latitude=data.get("job_latitude"),
+                longitude=data.get("job_longitude"),
+            )
+
+            booking = create_booking(
+                customer=request.user.customer_profile,
+                artisan=data["artisan"],
+                service=data["service"],
+                job_address=location["job_address"],
+                job_latitude=location["job_latitude"],
+                job_longitude=location["job_longitude"],
+            )
+
+        except SavedLocation.DoesNotExist:
+            return Response(
+                {"error": "Saved location not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        except GeocodingUnavailable as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        except ValidationError as e:
+            return Response(
+                {"error": e.messages},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
-            serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST
+            BookingSerializer(
+                booking,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_201_CREATED,
         )
-
 
 class BookingDetailView(APIView):
     permission_classes = [IsAuthenticated]

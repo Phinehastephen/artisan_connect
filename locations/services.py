@@ -117,6 +117,98 @@ def resolve_search_coordinates(
 
     return saved_location.latitude, saved_location.longitude
 
+@transaction.atomic
+def resolve_booking_location(
+    user,
+    location_type,
+    location_id=None,
+    address=None,
+    latitude=None,
+    longitude=None,
+):
+    """Resolve and validate the actual location for a booking."""
+
+    if user.role != user.Role.CUSTOMER:
+        raise ValidationError(
+            "Only customers can select a booking location."
+        )
+
+    if location_type == "saved":
+        if location_id is None:
+            raise ValidationError(
+                "A saved location ID is required."
+            )
+
+        try:
+            saved_location = SavedLocation.objects.get(
+                pk=location_id,
+                customer=user.customer_profile,
+            )
+        except SavedLocation.DoesNotExist:
+            raise ValidationError(
+                "Saved location not found."
+            )
+
+        latitude = saved_location.latitude
+        longitude = saved_location.longitude
+
+    elif location_type in ("current", "custom"):
+        if latitude is None or longitude is None:
+            raise ValidationError(
+                "Both latitude and longitude are required."
+            )
+
+        if location_type == "custom":
+            if not address or not address.strip():
+                raise ValidationError(
+                    "An address is required for a custom location."
+                )
+
+            # Confirm that the supplied coordinates correspond
+            # reasonably closely to a result for the address.
+            candidates = geocode_address(address)
+
+            matching_location = any(
+                calculate_distance_km(
+                    latitude,
+                    longitude,
+                    candidate["latitude"],
+                    candidate["longitude"],
+                ) <= 0.5
+                for candidate in candidates
+            )
+
+            if not matching_location:
+                raise ValidationError(
+                    "The address does not match the supplied "
+                    "coordinates. Please select the address "
+                    "from the map search results."
+                )
+
+    else:
+        raise ValidationError(
+            "Invalid booking location type."
+        )
+
+    # Use the address resolved from the actual coordinates,
+    # rather than blindly trusting an address submitted by
+    # the frontend.
+    try:
+        place = reverse_geocode(latitude, longitude)
+    except GeocodingUnavailable:
+        raise
+
+    if place is None:
+        raise ValidationError(
+            "Could not resolve an address for this location. "
+            "Please select another location."
+        )
+
+    return {
+        "job_address": place["display_name"],
+        "job_latitude": latitude,
+        "job_longitude": longitude,
+    }
 
 # find nearby artisans within the configured nearby radius of the supplied coordinates
 def find_nearby_artisans(latitude, longitude, service=None):

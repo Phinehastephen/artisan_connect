@@ -121,13 +121,31 @@ This separation also allows future clients, such as a Flutter application, to co
 
 ### Recent validation status
 
-The project has been validated with real Django simulations covering the full marketplace flow:
+The project has been validated with real Django simulations and Postman checks covering the full marketplace flow:
 
 - smart-search query matching for natural-language service requests
 - current-location and saved-location coordinate resolution
 - nearby-artisan discovery in map-style result sets
 - booking lifecycle from `PENDING` to `FINALIZED`
-- dispute handling and admin finalization
+- dispute handling and admin-only dispute finalization
+- customer confirmation finalization for successful jobs
+- 72-hour automatic finalization when a customer forgets to confirm
+- review creation after a successful booking and one-time review edits within 24 hours
+
+The validated booking and review path is:
+
+```text
+Customer creates booking
+  → artisan accepts
+  → artisan starts job
+  → artisan marks job complete
+  → customer confirms completion
+  → booking finalizes as CUSTOMER_CONFIRMED
+  → customer posts a review for the completed/finalized booking
+```
+
+If the customer does not confirm, the system waits 72 hours and then finalizes automatically as `AUTO`.
+If the customer disputes the job, the booking moves to `DISPUTED` and an admin finalizes it as `ADMIN`.
 
 A dedicated regression test now verifies the map/nearby-artisan flow in `locations/tests.py`:
 
@@ -496,10 +514,40 @@ Customer location       → current GPS or a saved location
  ↓
 Verified artisans offering that service
  ↓
-Recommendation ranking  → V1: closest first (the recommendation engine will replace this step)
+Recommendation ranking  → composite score (rating, finalized jobs, distance, response time)
 ```
 
-`GET /api/v1/ai/search?q=<text>&location_type=current&latitude=..&longitude=..` (or `location_type=saved&location_id=<id>`). Customers only; the text must be 2–200 characters; limited to 30 searches per minute.
+`GET /api/v1/ai/search?q=<text>&location_type=current&latitude=..&longitude=..` (or `location_type=saved&location_id=<id>`). Customers only; the text must be 2–200 characters; limited to 30 searches per minute. On a confident match, Smart Search resolves the location and calls the composite recommendation ranker. The 10 km radius is an eligibility limit; eligible artisans are then ordered by composite score.
+
+#### Test Smart Search in Postman
+
+1. Start the API with `python manage.py runserver`. Use `http://127.0.0.1:8000` as the Postman base URL.
+2. Log in as a customer: send `POST {{base_url}}/api/v1/accounts/auth/login` with a raw JSON body:
+
+   ```json
+   {
+     "username": "your_customer_username",
+     "password": "your_password"
+   }
+   ```
+
+   Copy the `access` value from the response. In the search request, open **Authorization**, choose **Bearer Token**, and paste that value.
+
+3. Ensure test data exists: an active service (for example Plumbing), at least two verified artisans offering it with coordinates and prices, and optionally finalized booking/review history so the score differences are visible. Artisan coordinates should be within 10 km of the chosen search point to appear.
+4. Send `GET {{base_url}}/api/v1/ai/search` with these query parameters for a current location:
+
+   | Key             | Example value |
+   | --------------- | ------------- |
+   | `q`             | `plumbing`    |
+   | `location_type` | `current`     |
+   | `latitude`      | `6.5244`      |
+   | `longitude`     | `3.3792`      |
+
+   For a saved location, use `q=plumbing`, `location_type=saved`, and `location_id=<id>` instead of latitude/longitude. Get the ID from `GET {{base_url}}/api/v1/locations/create/locations`; saved locations are customer-owned.
+
+5. For a confident match, inspect `service`, `origin`, and `results`. Results are already in composite-rank order and include map/display data (`id`, `name`, `distance_km`, rounded `latitude`/`longitude`, rating, and prices), plus `total_score`, its `scores` breakdown, `completed_jobs`, and `average_response_minutes`. Artisans beyond 10 km are excluded. A vague or ambiguous query returns clarification/suggestion fields instead of ranked results.
+
+The committed end-to-end simulation can also be run without Postman using `python manage.py test ai.tests.SmartSearchRankingTests.test_full_search_location_map_and_composite_ranking_flow`. It uses Django's isolated test database and does not alter development or production data.
 
 **What counts as a search query:** free text describing either the service or the problem.
 
@@ -535,19 +583,63 @@ Only **active** services are ever matched. Keywords are managed by admins on eac
 
 **V1 vs V2:**
 
-- **V1 (built):** rule-based matching (exact name, keywords/synonyms, word forms, typo tolerance, scoring), three confidence levels, combined service + nearby search, English keywords, search log, keyword management in admin.
-- **V2 (planned):** a trained machine-learning classifier built from the search log; more languages (Pidgin, Yoruba, Igbo, Hausa); personalisation from search history; the recommendation engine replacing distance-only ranking; queries needing more than one service (e.g. "paint and fix the wiring").
+- **V1 (built):** rule-based matching (exact name, keywords/synonyms, word forms, typo tolerance, scoring), three confidence levels, combined service + location + composite-ranked artisan search, English keywords, search log, and keyword management in admin.
+- **V2 (planned):** a trained machine-learning classifier built from the search log; more languages (Pidgin, Yoruba, Igbo, Hausa); personalisation from search history; queries needing more than one service (e.g. "paint and fix the wiring").
 
 ### Recommendation Engine
 
-Ranks suitable nearby artisans using factors such as:
+The recommendation flow is explicit and must follow this order:
 
-- Relevance
-- Location
-- Rating
-- Completed jobs
-- Response characteristics
-- Verification status
+```text
+Smart Search
+  ↓
+Identify service
+  ↓
+Find eligible artisans
+  ↓
+Rank artisans
+  ↓
+Return results
+```
+
+#### Eligibility gate (must happen before ranking)
+
+An artisan is only eligible for ranking if they satisfy every condition below:
+
+- **VERIFIED**
+- **Offers the requested service**
+- **Within the 10 km radius**
+- **Has valid location coordinates**
+
+Anyone failing any of these checks is excluded before ranking. Ineligible artisans do not receive a score and do not appear in the final result list.
+
+#### Ranking factors
+
+| Factor                   |          Maximum | Current scoring                                                                     |
+| ------------------------ | ---------------: | ----------------------------------------------------------------------------------- |
+| ⭐ Rating                |               35 | Average rating divided by 5, multiplied by 35; no reviews = 0                       |
+| 🛠️ Completed jobs        |               25 | 0–4: 0; 5–14: 5; 15–34: 10; 35–74: 15; 75–149: 20; 150+: 25                         |
+| 📍 Distance              |               25 | Up to 2 km: 25; up to 4: 20; up to 6: 15; up to 8: 10; up to 10: 5                  |
+| ⚡ Average response time |               15 | Up to 5 min: 15; up to 15: 12; up to 30: 9; up to 60: 6; over 60: 3; no history = 0 |
+| ✅ Verification          | Eligibility gate | Must be `VERIFIED`; it is not added as score points                                 |
+
+The ranking model is designed to balance trust, proven experience, and convenience, not to let one signal dominate. That means:
+
+- **Rating is important, but it is not decisive by itself.**
+- **Completed jobs are a strong signal of real-world reliability.**
+- A newer artisan with a very high rating should not automatically outrank an established artisan with a strong work history and a slightly lower rating.
+- **Rating alone must never determine the recommendation.**
+
+Example:
+
+- Artisan A: **670 completed jobs**, **4.9 rating**
+- Artisan B: **20 completed jobs**, **5.0 rating**
+
+Both may be eligible, but Artisan A should remain competitive and may rank above Artisan B because the second artisan has far less proven experience. The recommendation engine must consider work history as a meaningful quality signal rather than treating a perfect rating as a blanket winner.
+
+#### Final behavior
+
+The system returns only those artisans that passed the eligibility gate, then ranks them using a score out of 100 that combines rating, completed jobs, distance, and responsiveness. Ties are broken by shorter distance, then lower artisan ID. Duplicate artisan IDs are returned only once. Smart Search keeps the map-marker fields and adds `total_score`, per-factor `scores`, `completed_jobs`, and `average_response_minutes`. Private contact information is not included.
 
 ### Scam Detection
 

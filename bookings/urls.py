@@ -34,6 +34,6 @@ urlpatterns = [
         BookingStatusActionView.as_view(),
         name="booking-status-action",
     ),
-    # api/v1/bookings/status/<int:pk>/<str:action>
+    # api/v1/bookings/status/<int:pk>/<str:action> (start, complete)
     
 ]

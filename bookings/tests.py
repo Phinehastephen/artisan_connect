@@ -182,7 +182,7 @@ class BookingBusinessLogicTests(TestCase):
 
         with self.assertRaises(ValidationError):
             complete_booking(booking)
-            
+
     def test_finalizing_booking_clears_job_location(self):
         booking = create_booking(
             customer=self.customer,
@@ -221,7 +221,7 @@ class BookingBusinessLogicTests(TestCase):
         self.assertIsNone(
             booking.job_longitude,
         )
-        
+
     def test_incomplete_booking_cannot_be_finalized(self):
         booking = create_booking(
             customer=self.customer,
@@ -327,6 +327,7 @@ class BookingBusinessLogicTests(TestCase):
                 job_latitude=6.524400,
                 job_longitude=3.379200,
             )
+
 
 class BookingPrivacyTests(TestCase):
     """Contact and location details must not let the customer and artisan
@@ -563,7 +564,8 @@ class CompletionConfirmationTests(TestCase):
 
     def test_failed_reminder_is_retried(self):
         with patch("bookings.services.send_mail", side_effect=Exception("SMTP down")):
-            self.assertEqual(send_due_confirmation_reminders(self._after(24)), 0)
+            self.assertEqual(
+                send_due_confirmation_reminders(self._after(24)), 0)
 
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.confirmation_reminders_sent, 0)
@@ -683,7 +685,6 @@ class CompletionConfirmationTests(TestCase):
         )
         self.assertEqual(review.booking, self.booking)
 
-
     def test_non_text_dispute_reason_is_rejected_cleanly(self):
         for reason in (12345, ["The tap is still leaking badly."], {"a": 1}):
             with self.assertRaises(ValidationError):
@@ -744,15 +745,53 @@ class CompletionConfirmationTests(TestCase):
 
 
 class BookingInputTests(TestCase):
-
-    def test_job_address_and_gps_are_required(self):
+    def setUp(self):
         from .serializers import BookingCreateSerializer
 
-        serializer = BookingCreateSerializer(data={"artisan": 1, "service": 1})
+        self.serializer_class = BookingCreateSerializer
+        artisan_user = User.objects.create_user(
+            username="input_artisan",
+            email="input_artisan@example.com",
+            password="testpassword123",
+            full_name="Input Artisan",
+            role=User.Role.ARTISAN,
+        )
+        artisan = Artisan.objects.create(
+            user=artisan_user,
+            phone_number="08000000040",
+            verification_status=Artisan.VerificationStatus.VERIFIED,
+        )
+        service = Service.objects.create(
+            name="Input Plumbing",
+            description="Plumbing work",
+            minimum_price=1000,
+            maximum_price=5000,
+            is_active=True,
+        )
+        self.base_data = {"artisan": artisan.pk, "service": service.pk}
 
-        self.assertFalse(serializer.is_valid())
-        for field in ("job_address", "job_latitude", "job_longitude"):
-            self.assertIn(field, serializer.errors)
+    def test_location_modes_require_mode_specific_fields(self):
+        current = self.serializer_class(data={
+            **self.base_data,
+            "job_location_type": "current",
+        })
+        self.assertFalse(current.is_valid())
+        self.assertIn("job_latitude", current.errors)
+        self.assertIn("job_longitude", current.errors)
+
+        saved = self.serializer_class(data={
+            **self.base_data,
+            "job_location_type": "saved",
+        })
+        self.assertFalse(saved.is_valid())
+        self.assertIn("job_location_id", saved.errors)
+
+        custom = self.serializer_class(data={
+            **self.base_data,
+            "job_location_type": "custom",
+        })
+        self.assertFalse(custom.is_valid())
+        self.assertIn("non_field_errors", custom.errors)
 
     def test_review_summary_does_not_reveal_status(self):
         from .serializers import BookingSummarySerializer

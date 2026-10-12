@@ -18,7 +18,7 @@ urlpatterns = [
 ]
 
 # api/v1/artisans/artisan
-# api/v1/artisans/verification
+# api/v1/artisans/verification/<int:pk>/<str:action>
 # api/v1/artisans/pending
 # api/v1/artisans/rejected
 # api/v1/artisans/me (patch/Get)

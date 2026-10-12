@@ -14,10 +14,11 @@ urlpatterns = [
     ),
 
     path(
-        "<int:pk>/",
+        "edit/<int:pk>",
         ReviewDetailView.as_view(),
         name="review-detail",
     ),
 ]
 
 # api/v1/reviews/review/create
+# api/v1/reviews/edit/<int:pk>

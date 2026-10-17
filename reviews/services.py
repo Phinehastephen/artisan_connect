@@ -5,6 +5,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from bookings.models import Booking
+from notifications.models import Notification
+from notifications.services import create_notification
 
 from .models import Review
 
@@ -39,14 +41,24 @@ def create_review(
             "Rating must be between 1 and 5."
         )
 
-    return Review.objects.create(
+    review = Review.objects.create(
         booking=booking,
         customer=booking.customer,
         artisan=booking.artisan,
         rating=rating,
         comment=comment,
     )
-    
+    artisan_user = booking.artisan.user
+    create_notification(
+        recipient=artisan_user,
+        notification_type=Notification.Type.REVIEW_RECEIVED,
+        title="New review received",
+        message=f"You received a {rating}-star review for booking #{booking.pk}.",
+        target_path=f"/api/v1/reviews/edit/{review.pk}",
+    )
+    return review
+
+
 @transaction.atomic
 def edit_review(review, customer, rating, comment=None):
     Review.objects.select_for_update().filter(pk=review.pk).first()

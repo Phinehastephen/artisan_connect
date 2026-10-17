@@ -22,7 +22,6 @@ def normalize_and_check_email(email):
     return email
 
 
-
 def check_username_available(username):
     # The DB constraint is case-sensitive; "TakenName" and "takenname" must
     # not both exist (customers can also rename themselves - same rule).
@@ -100,11 +99,11 @@ class CustomerRegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         min_length=8,
     )
-    
+
     phone_number = serializers.CharField(
         max_length=20,
         required=True,
-    )    
+    )
 
     class Meta:
         model = User
@@ -184,8 +183,8 @@ class ArtisanRegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         from .services import register_artisan
         return run_registration(register_artisan, validated_data)
-    
-    
+
+
 class CustomLoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
@@ -228,9 +227,11 @@ class CustomLoginSerializer(serializers.Serializer):
         return {
             'username': user.username,
             'email': user.email,
+            'role': user.role,
             'access': str(refresh.access_token),
             'refresh': str(refresh),
         }
+
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -240,7 +241,8 @@ class PasswordResetVerifySerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = serializers.RegexField(
         regex=r"^\d{6}$",
-        error_messages={"invalid": "Enter the 6-digit code sent to your email."},
+        error_messages={
+            "invalid": "Enter the 6-digit code sent to your email."},
     )
 
 

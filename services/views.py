@@ -1,5 +1,5 @@
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -13,6 +13,11 @@ from .services import create_service,  update_service
 
 class ServiceListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == "GET":
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def get(self, request):
         services = Service.objects.all()
@@ -66,8 +71,8 @@ class ServiceListCreateAPIView(APIView):
             ServiceSerializer(service).data,
             status=status.HTTP_201_CREATED
         )
-        
-        
+
+
 class ServiceDetailAPIView(APIView):
     permission_classes = [IsAuthenticated]
 

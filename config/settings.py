@@ -20,6 +20,9 @@ load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+PRIVATE_UPLOAD_ROOT = Path(
+    os.getenv("PRIVATE_UPLOAD_ROOT", str(BASE_DIR / "private_uploads"))
+).expanduser().resolve()
 
 
 # Quick-start development settings - unsuitable for production
@@ -56,6 +59,7 @@ INSTALLED_APPS = [
     "bookings",
     "ai",
     "recommendations",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -157,7 +161,8 @@ DEFAULT_FROM_EMAIL = os.getenv(
 )
 # Emails whose send time could leak information (password reset) go out on
 # a background thread. Tests turn this off so mail.outbox is filled at once.
-SEND_EMAIL_IN_BACKGROUND = os.getenv("SEND_EMAIL_IN_BACKGROUND", "True").lower() == "true"
+SEND_EMAIL_IN_BACKGROUND = os.getenv(
+    "SEND_EMAIL_IN_BACKGROUND", "True").lower() == "true"
 # Fail fast instead of hanging the request if the SMTP relay is unreachable.
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 
@@ -210,6 +215,4 @@ SIMPLE_JWT = {
 }
 
 
-
 AUTH_USER_MODEL = "accounts.User"
-

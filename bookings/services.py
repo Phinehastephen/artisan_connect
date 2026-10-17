@@ -7,6 +7,8 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 from accounts.services import run_in_background
+from notifications.models import Notification
+from notifications.services import create_notification, notify_admins
 
 from .models import Booking
 
@@ -18,7 +20,6 @@ CONFIRMATION_REMINDER_SCHEDULE = [
     timedelta(hours=48),
     timedelta(hours=66),
 ]
-
 
 
 JOB_LOCATION_FIELDS = ["job_address", "job_latitude", "job_longitude"]
@@ -40,6 +41,18 @@ def _lock(booking):
     booking.refresh_from_db()
 
 
+def _notify_booking_user(*, booking, recipient, notification_type, title, message):
+    if recipient is None:
+        return
+    return create_notification(
+        recipient=recipient,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+        target_path=f"/api/v1/bookings/details/{booking.pk}",
+    )
+
+
 @transaction.atomic
 def accept_booking(booking):
     """
@@ -49,10 +62,17 @@ def accept_booking(booking):
 
     if booking.status != Booking.Status.PENDING:
         raise ValidationError("Only pending bookings can be accepted.")
-        
+
     booking.status = Booking.Status.ACCEPTED
     booking.accepted_at = timezone.now()
     booking.save(update_fields=["status", "accepted_at"])
+    _notify_booking_user(
+        booking=booking,
+        recipient=booking.customer.user if booking.customer_id else None,
+        notification_type=Notification.Type.BOOKING_ACCEPTED,
+        title="Booking accepted",
+        message=f"Your booking #{booking.pk} has been accepted.",
+    )
     return booking
 
 
@@ -65,9 +85,16 @@ def start_booking(booking):
 
     if booking.status != Booking.Status.ACCEPTED:
         raise ValidationError("Only accepted bookings can be started.")
-        
+
     booking.status = Booking.Status.IN_PROGRESS
     booking.save(update_fields=["status"])
+    _notify_booking_user(
+        booking=booking,
+        recipient=booking.customer.user if booking.customer_id else None,
+        notification_type=Notification.Type.BOOKING_STARTED,
+        title="Work started",
+        message=f"Work has started on booking #{booking.pk}.",
+    )
     return booking
 
 
@@ -80,7 +107,7 @@ def complete_booking(booking):
 
     if booking.status != Booking.Status.IN_PROGRESS:
         raise ValidationError("Only in-progress bookings can be completed.")
-        
+
     booking.status = Booking.Status.COMPLETED
     booking.completed_at = timezone.now()
     # A job reopened after a dispute gets a fresh set of reminders and a
@@ -91,6 +118,13 @@ def complete_booking(booking):
         "completed_at",
         "confirmation_reminders_sent",
     ])
+    _notify_booking_user(
+        booking=booking,
+        recipient=booking.customer.user if booking.customer_id else None,
+        notification_type=Notification.Type.BOOKING_COMPLETED,
+        title="Work marked complete",
+        message=f"The artisan marked booking #{booking.pk} complete. Please confirm or dispute it.",
+    )
     return booking
 
 
@@ -107,6 +141,13 @@ def reject_booking(booking):
     booking.status = Booking.Status.CANCELLED
     _clear_job_location(booking)
     booking.save(update_fields=["status", *JOB_LOCATION_FIELDS])
+    _notify_booking_user(
+        booking=booking,
+        recipient=booking.customer.user if booking.customer_id else None,
+        notification_type=Notification.Type.BOOKING_REJECTED,
+        title="Booking declined",
+        message=f"Your booking #{booking.pk} was declined by the artisan.",
+    )
     return booking
 
 
@@ -125,6 +166,13 @@ def cancel_booking(booking):
     booking.status = Booking.Status.CANCELLED
     _clear_job_location(booking)
     booking.save(update_fields=["status", *JOB_LOCATION_FIELDS])
+    _notify_booking_user(
+        booking=booking,
+        recipient=booking.artisan.user if booking.artisan_id else None,
+        notification_type=Notification.Type.BOOKING_CANCELLED,
+        title="Booking cancelled",
+        message=f"Booking #{booking.pk} was cancelled by the customer.",
+    )
     return booking
 
 
@@ -140,6 +188,20 @@ def _finalize(booking, method):
         "finalization_method",
         *JOB_LOCATION_FIELDS,
     ])
+    recipients = [
+        booking.artisan.user if booking.artisan_id else None,
+    ]
+    if method != Booking.FinalizationMethod.CUSTOMER_CONFIRMED:
+        recipients.append(
+            booking.customer.user if booking.customer_id else None)
+    for recipient in recipients:
+        _notify_booking_user(
+            booking=booking,
+            recipient=recipient,
+            notification_type=Notification.Type.BOOKING_FINALIZED,
+            title="Booking finalized",
+            message=f"Booking #{booking.pk} has been finalized.",
+        )
     return booking
 
 
@@ -182,6 +244,21 @@ def dispute_completion(booking, reason):
     booking.disputed_at = timezone.now()
     booking.save(update_fields=["status", "dispute_reason", "disputed_at"])
 
+    if booking.artisan_id:
+        _notify_booking_user(
+            booking=booking,
+            recipient=booking.artisan.user,
+            notification_type=Notification.Type.BOOKING_DISPUTED,
+            title="Customer disputed a completed booking",
+            message=f"Booking #{booking.pk} was disputed. Review the dispute details.",
+        )
+    notify_admins(
+        notification_type=Notification.Type.BOOKING_DISPUTED,
+        title="Booking dispute needs review",
+        message=f"Booking #{booking.pk} was disputed and needs an admin decision.",
+        target_path=f"/api/v1/bookings/details/{booking.pk}",
+    )
+
     # Only after the dispute is saved, and off the request thread so the
     # customer isn't kept waiting on the mail server.
     booking_id = booking.pk
@@ -192,8 +269,7 @@ def dispute_completion(booking, reason):
 
 
 def send_dispute_notification(booking_id):
-    # Admins have no in-app notifications yet (planned Notifications
-    # module), so a dispute is emailed to every active admin.
+    # Email remains a backup to the in-app admin notification.
     from accounts.models import User
 
     try:
@@ -251,6 +327,13 @@ def reopen_booking(booking):
     booking.status = Booking.Status.IN_PROGRESS
     booking.completed_at = None
     booking.save(update_fields=["status", "completed_at"])
+    _notify_booking_user(
+        booking=booking,
+        recipient=booking.artisan.user if booking.artisan_id else None,
+        notification_type=Notification.Type.BOOKING_REOPENED,
+        title="Disputed booking reopened",
+        message=f"Booking #{booking.pk} was reopened for you to continue the work.",
+    )
     return booking
 
 
@@ -312,7 +395,8 @@ def send_due_confirmation_reminders(now=None):
     for pk in candidates:
         with transaction.atomic():
             booking = (
-                Booking.objects.select_for_update(skip_locked=True, of=("self",))
+                Booking.objects.select_for_update(
+                    skip_locked=True, of=("self",))
                 .select_related("customer__user", "artisan__user", "service")
                 .filter(pk=pk, status=Booking.Status.COMPLETED)
                 .first()
@@ -327,10 +411,20 @@ def send_due_confirmation_reminders(now=None):
                 continue
 
             is_final = index == len(CONFIRMATION_REMINDER_SCHEDULE) - 1
-            
+
             if _send_confirmation_reminder(booking, is_final):
                 booking.confirmation_reminders_sent = index + 1
                 booking.save(update_fields=["confirmation_reminders_sent"])
+                _notify_booking_user(
+                    booking=booking,
+                    recipient=booking.customer.user,
+                    notification_type=Notification.Type.BOOKING_CONFIRMATION_REMINDER,
+                    title="Please confirm your completed booking",
+                    message=(
+                        f"Booking #{booking.pk} is awaiting your confirmation. "
+                        "Confirm the work or dispute it if it is incomplete."
+                    ),
+                )
                 sent += 1
 
     return sent
@@ -394,6 +488,14 @@ def create_booking(
         job_latitude=job_latitude,
         job_longitude=job_longitude,
         status=Booking.Status.PENDING,
+    )
+
+    _notify_booking_user(
+        booking=booking,
+        recipient=artisan.user,
+        notification_type=Notification.Type.BOOKING_REQUESTED,
+        title="New booking request",
+        message=f"You received a new booking request for {service.name} (#{booking.pk}).",
     )
 
     return booking

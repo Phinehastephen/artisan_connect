@@ -205,7 +205,6 @@ class EmailVerificationTests(TestCase):
             send_verification_email(self.user, token)  # should not raise
 
 
-
 @override_settings(SEND_EMAIL_IN_BACKGROUND=False)
 class PasswordResetTests(TestCase):
 
@@ -585,3 +584,70 @@ class UsernameAndAdminTests(TestCase):
         )
         self.assertIn("full_name", form.base_fields)
         self.assertIn("email_verified", form.base_fields)
+
+
+class AuthenticationFrontendAPITests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="frontend_customer",
+            email="frontend-customer@example.com",
+            password="StrongPassword123!",
+            full_name="Frontend Customer",
+            role=User.Role.CUSTOMER,
+        )
+
+    def test_login_returns_role_with_jwt_tokens(self):
+        response = self.client.post(
+            "/api/v1/accounts/auth/login",
+            {"username": self.user.username, "password": "StrongPassword123!"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["role"], User.Role.CUSTOMER)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+
+    def test_current_user_endpoint_returns_server_role(self):
+        login_response = self.client.post(
+            "/api/v1/accounts/auth/login",
+            {"username": self.user.username, "password": "StrongPassword123!"},
+            format="json",
+        )
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}"
+        )
+
+        response = self.client.get("/api/v1/accounts/auth/me")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], self.user.id)
+        self.assertEqual(response.data["role"], User.Role.CUSTOMER)
+
+    def test_logout_blacklists_refresh_token(self):
+        login_response = self.client.post(
+            "/api/v1/accounts/auth/login",
+            {"username": self.user.username, "password": "StrongPassword123!"},
+            format="json",
+        )
+        tokens = login_response.data
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {tokens['access']}"
+        )
+
+        logout_response = self.client.post(
+            "/api/v1/accounts/auth/logout",
+            {"refresh": tokens["refresh"]},
+            format="json",
+        )
+        refresh_response = self.client.post(
+            "/api/v1/accounts/auth/refresh",
+            {"refresh": tokens["refresh"]},
+            format="json",
+        )
+
+        self.assertLess(logout_response.status_code, 300)
+        self.assertEqual(refresh_response.status_code, 401)

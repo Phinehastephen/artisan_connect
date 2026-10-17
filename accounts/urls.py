@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import CustomJWTLoginView
+from .views import CustomJWTLoginView, CurrentUserAPIView, LogoutAPIView
 
 from .views import (
     CustomerRegisterAPIView,
@@ -26,20 +26,32 @@ urlpatterns = [
         name="artisan-register"
     ),
     # api/v1/accounts/register/artisan
-    
+
     path(
         'auth/login',
         CustomJWTLoginView.as_view(),
         name='auth_login'
-        ),
-     # api/v1/accounts/auth/login
-    
+    ),
+    # api/v1/accounts/auth/login
+
     path(
         'auth/refresh',
         TokenRefreshView.as_view(),
         name='token_refresh'
-        ),
-     # api/v1/accounts/auth/refresh
+    ),
+    # api/v1/accounts/auth/refresh
+
+    path(
+        "auth/me",
+        CurrentUserAPIView.as_view(),
+        name="current-user",
+    ),
+
+    path(
+        "auth/logout",
+        LogoutAPIView.as_view(),
+        name="auth_logout",
+    ),
 
     path(
         "verify-email/<str:token>",

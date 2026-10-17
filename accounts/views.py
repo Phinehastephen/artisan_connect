@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.views import TokenBlacklistView
 from .serializers import CustomLoginSerializer
 
 from .serializers import (
@@ -56,7 +57,7 @@ class ArtisanRegisterAPIView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "registration"
-    
+
     def post(self, request, *args, **kwargs):
 
         serializer = ArtisanRegisterSerializer(
@@ -75,7 +76,8 @@ class ArtisanRegisterAPIView(APIView):
             serializer.errors,
             status=status.HTTP_400_BAD_REQUEST
         )
-        
+
+
 class CustomJWTLoginView(APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -87,6 +89,20 @@ class CustomJWTLoginView(APIView):
             # Return tokens along with user info
             return Response(serializer.validated_data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CurrentUserAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        return Response(
+            UserSerializer(request.user).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class LogoutAPIView(TokenBlacklistView):
+    pass
 
 
 class VerifyEmailAPIView(APIView):
@@ -229,4 +245,3 @@ class PasswordResetConfirmAPIView(APIView):
             {"detail": "Password reset successful. You can now log in."},
             status=status.HTTP_200_OK,
         )
-

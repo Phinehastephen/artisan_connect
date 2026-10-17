@@ -2,7 +2,9 @@ from rest_framework import serializers
 
 from accounts.serializers import UserPublicSerializer, UserSerializer
 from locations.serializers import CoordinateField
-from .models import Artisan
+from services.models import Service
+from services.serializers import ServiceSerializer
+from .models import Artisan, ServiceChangeRequest, ServiceQualificationEvidence
 
 
 class ArtisanSerializer(serializers.ModelSerializer):
@@ -89,6 +91,107 @@ class ArtisanProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class ServiceChangeRequestCreateSerializer(serializers.Serializer):
+    services = serializers.PrimaryKeyRelatedField(
+        queryset=Service.objects.filter(is_active=True),
+        many=True,
+        required=True,
+    )
+    reason = serializers.CharField(
+        required=True, allow_blank=False, trim_whitespace=True)
+    trade_certificate = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        required=False,
+    )
+    training_completion = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        required=False,
+    )
+    portfolio_experience = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        required=False,
+    )
+
+    def validate(self, attrs):
+        if "artisan" in self.initial_data or "artisan_id" in self.initial_data:
+            raise serializers.ValidationError(
+                "The artisan is determined from the authenticated account."
+            )
+        evidence_categories = {
+            "trade_certificate",
+            "training_completion",
+            "portfolio_experience",
+        }
+        if len(evidence_categories.intersection(attrs)) < 2:
+            raise serializers.ValidationError(
+                "Upload evidence from at least two qualification categories."
+            )
+        return attrs
+
+    def create(self, validated_data):
+        from .services import create_service_change_request
+
+        artisan = self.context["artisan"]
+        service_ids = [service.id for service in validated_data["services"]]
+        qualification_evidence = {
+            category: validated_data[category]
+            for category in (
+                "trade_certificate",
+                "training_completion",
+                "portfolio_experience",
+            )
+            if category in validated_data
+        }
+        return create_service_change_request(
+            artisan=artisan,
+            service_ids=service_ids,
+            reason=validated_data["reason"],
+            qualification_evidence=qualification_evidence,
+        )
+
+
+class ServiceQualificationEvidenceSerializer(serializers.ModelSerializer):
+    download_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ServiceQualificationEvidence
+        fields = ["id", "category", "uploaded_at", "download_url"]
+        read_only_fields = fields
+
+    def get_download_url(self, evidence):
+        from django.urls import reverse
+
+        return reverse(
+            "service-change-request-evidence-download",
+            kwargs={
+                "pk": evidence.service_change_request_id,
+                "evidence_id": evidence.id,
+            },
+        )
+
+
+class ServiceChangeRequestSerializer(serializers.ModelSerializer):
+    artisan = serializers.PrimaryKeyRelatedField(read_only=True)
+    services = ServiceSerializer(many=True, read_only=True)
+    qualification_evidence = ServiceQualificationEvidenceSerializer(
+        many=True, read_only=True
+    )
+
+    class Meta:
+        model = ServiceChangeRequest
+        fields = [
+            "id",
+            "artisan",
+            "services",
+            "qualification_evidence",
+            "reason",
+            "status",
+            "created_at",
+            "reviewed_at",
+        ]
+        read_only_fields = fields
 
 
 class ArtisanProfileUpdateSerializer(serializers.Serializer):

@@ -196,8 +196,20 @@ Service categories are postponed.
 - `ai_searchlog` — Smart Search history (kept 12 months)
 - `reviews_review`
 - `locations_savedlocation`
+- `notifications_notification` — recipient-scoped in-app notifications and read state
 
 Additional modules are introduced according to their dependencies and approved development stage.
+
+### Notifications
+
+In-app notifications are created for booking requests and status changes, completion reminders, disputes, reviews received by artisans, and service-change submissions/decisions. Dispute and service-change email alerts remain enabled as a backup.
+
+- `GET /api/v1/notifications/` — list the signed-in user's notifications (`page`, `page_size`, and `unread_only=true` are supported); response includes the unread count.
+- `GET /api/v1/notifications/unread-count` — get the signed-in user's unread count.
+- `POST /api/v1/notifications/<id>/read` — mark one of the signed-in user's notifications read.
+- `POST /api/v1/notifications/read-all` — mark all of the signed-in user's notifications read.
+
+Every inbox query is scoped to the authenticated recipient. Attempts to mark another user's notification read return 404.
 
 ---
 
@@ -291,7 +303,7 @@ Initial services
    ↓
 Submit Service Change Request
    ↓
-Give reason
+Give reason and Service Qualification Evidence
    ↓
 Admin reviews
    ↓
@@ -306,12 +318,19 @@ Key rules:
 
 - An artisan selects 1–3 services at registration; this becomes their initial service list.
 - Changing services afterward is never a direct profile edit — it must go through a **Service Change Request**.
+- A change request replaces the artisan's current service set; it cannot be used to add services without removing an existing service. The proposed final set may contain at most 3 services.
 - Every request must include a reason for the requested change.
+- Every request must include evidence from at least **two** of these categories: trade certificate or qualification; practical training or apprenticeship completion; portfolio or work experience. Multiple files may be uploaded in a category.
+- Evidence files accept PDF, JPG, JPEG, PNG, and WEBP formats up to 10 MB per file. They are stored outside public media and can only be downloaded by the requesting artisan or an admin.
+- Private files use `PRIVATE_UPLOAD_ROOT` (default: `<project root>/private_uploads`). For deployment, set it to a durable directory outside public/static web roots and include that volume in backups.
 - An admin reviews each request and either approves or rejects it.
 - If approved, the artisan's services are updated and the artisan enters a **12-month waiting period** before another Service Change Request can be submitted.
+- Active admins receive an email when a request is submitted; the artisan receives an email after approval or rejection.
 - This prevents frequent switching that would undermine the artisan's price/service history and customer trust.
 
-**Status:** documented business rule, not yet implemented in the backend (no `ServiceChangeRequest` model/table exists yet). See the Current Status table.
+**API:** `POST /api/v1/artisans/service-change-requests` accepts `multipart/form-data` with `services` (the complete proposed service ID set), `reason`, and at least two of `trade_certificate`, `training_completion`, and `portfolio_experience`. Repeat a category field to upload multiple files in that category. Admins review requests at `GET /api/v1/artisans/service-change-requests` and decide with `POST /api/v1/artisans/service-change-requests/<id>/approve` or `/reject`. The response includes protected evidence download links.
+
+**Status:** implemented in the backend; see the Current Status table for overall project status.
 
 ---
 
@@ -647,7 +666,21 @@ Planned to combine NLP and anomaly-detection techniques to identify potentially 
 
 ### Labour Price Estimation
 
-Regression can be used to estimate labour charges.
+**Status: deferred; not implemented or approved for V1.** V1's `Service.minimum_price` and `maximum_price` are admin-maintained reference ranges, not job-specific estimates. Do not present them as a calculated quote.
+
+After the school defense, this may be considered for Version 2 or 3. The deferred design baseline is:
+
+- At booking time, collect only structured, service-specific task-scope answers. Avoid open-ended free text in the initial design to reduce accidental collection of names, addresses, and other personal details.
+- After the artisan marks the work complete, the artisan proposes the final **labour-only** amount. It must be within the selected service's admin-defined range, inclusive (`minimum_price ≤ amount ≤ maximum_price`). The customer confirms that exact proposal or flags a disagreement; the customer does not silently replace the artisan's amount.
+- Snapshot the service minimum and maximum used when the artisan submits the proposal so later service-price edits do not rewrite the historical bounds for that agreement.
+- Price confirmation is separate from confirming that the job is complete. It must not block or change the existing booking finalization workflow.
+- A price disagreement is not automatically a work-completion dispute. Its resolution flow must be designed separately; do not route it through the booking `DISPUTED` state without an approved decision.
+- Store the optional observation in a separate record linked to the booking; do not add these fields to the frozen `Booking` table.
+- Require separate, explicit customer and artisan consent before an observation is included in training data. Disputed, unconfirmed, cancelled, or otherwise ineligible records are excluded.
+- Training exports omit booking/user IDs, contact details, exact address/GPS, and material costs. Do not collect coarse location unless a documented need is approved. Consent withdrawal must prevent future use and be covered by an approved retention/deletion policy.
+- Before training, verify sample quality and representativeness and compare the model against a baseline. Do not expose an estimate until that evaluation passes.
+
+This is a deferred design baseline, not permission to collect data or build the estimator. Unrelated V1 data is not training data by default.
 
 **Important:** labour estimation concerns labour costs only; material costs are excluded.
 
@@ -669,9 +702,8 @@ The first release focuses on the core platform:
 - Booking
 - Reviews
 - Notifications
-- AI assistant
 - Smart search
-- Labour price estimation
+- Privacy-conscious data collection to support future improvements
 - Email verification
 - Django Admin
 
@@ -683,8 +715,10 @@ Planned enhancements include:
 - Community suggestions
 - Date of birth support
 - Enhanced AI/recommendations
+- Consider labour-only data collection after the school defense; develop a price estimator only if separately approved and enough suitable, consented examples exist
 - Custom admin dashboard
 - Additional analytics
+- Explore group/team artisan accounts for coordinated services (for example event planners and party teams); requires a separate authorization, booking ownership, and service design before implementation
 
 ### Version 3
 
@@ -694,6 +728,12 @@ Long-term features include:
 - Voice assistant
 - Video calling
 - Emergency requests
+
+### Future Group and Team Artisan Work
+
+Artisan Connect may later support businesses whose work is delivered by a team, such as event planners, party chiefs, and coordinated event crews. This is a V2/V3 concept only, not part of the V1 implementation.
+
+V1 remains based on an individual artisan owning their profile and each booking. Do not add group accounts, shared credentials, team membership, multi-artisan bookings, or payment splitting to V1. Before implementing the concept, define group ownership and member permissions, member verification, who accepts and manages a booking, service and availability representation, and how customer communications and any future payments are attributed.
 
 ---
 
@@ -859,7 +899,7 @@ artisan_connect/
 ├── bookings/
 ├── reviews/
 ├── locations/
-├── notifications/     (planned)
+├── notifications/     (in-app inbox)
 ├── administration/    (planned)
 ├── ai/                (Smart Search; recommendations and price estimation planned)
 │
@@ -890,13 +930,14 @@ The exact structure may evolve as implementation progresses, but changes must re
 | Password Reset                           | ✅ Complete           |
 | Customer Module                          | ✅ Complete           |
 | Service Management                       | 🔄 In Progress        |
-| Service Change Requests                  | ⏳ Planned            |
+| Service Change Requests                  | ✅ Complete (backend) |
 | Booking                                  | ✅ Complete (backend) |
 | Reviews & Ratings                        | ✅ Complete (backend) |
 | Location                                 | 🔄 In Progress        |
-| Notifications                            | ⏳ Planned            |
+| Notifications                            | ✅ Complete (backend) |
 | Smart Search (V1)                        | ✅ Complete (backend) |
 | AI Features (recommendations, V2 search) | ⏳ Planned/Developing |
+| Labour Price Estimation                  | ⏳ Deferred to V2/V3  |
 | Frontend                                 | ⏳ Upcoming           |
 | Testing                                  | 🔄 Ongoing            |
 | Deployment                               | ⏳ Later Phase        |

@@ -1,0 +1,43 @@
+:root {
+  --ink: #202922;
+  --muted: #68736b;
+  --line: #dce4dc;
+  --surface: #ffffff;
+  --green: #2f7655;
+  --green-dark: #245b42;
+  --green-wash: #e9f2eb;
+  color: var(--ink);
+  background: #f8faf7;
+  font-family: "Aptos", "Segoe UI", sans-serif;
+  font-synthesis: none;
+  font-weight: 400;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background:
+    linear-gradient(135deg, rgba(227, 239, 229, 0.45), transparent 38rem),
+    #f8faf7;
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 3px solid #8bb99d;
+  outline-offset: 3px;
+}

@@ -8,10 +8,6 @@ from bookings.serializers import BookingSummarySerializer
 class ReviewSerializer(serializers.ModelSerializer):
     """Serializer matching the exact Review model schema."""
 
-    # Read-only nested representations for GET response details. Reviews are
-    # publicly readable (reputation-building), so these use the "public"
-    # customer/artisan serializers (no phone_number/email) and a booking
-    # summary that never includes the job location.
     customer_detail = CustomerPublicSerializer(source="customer", read_only=True)
     artisan_detail = ArtisanPublicSerializer(source="artisan", read_only=True)
     booking_detail = BookingSummarySerializer(source="booking", read_only=True)
@@ -32,9 +28,7 @@ class ReviewSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        # customer/artisan are never taken from the request: the reviewer is
-        # always the logged-in customer and the artisan comes from the
-        # booking, so nobody can post a review in someone else's name.
+        
         read_only_fields = [
             "id",
             "customer",

@@ -46,13 +46,15 @@ urlpatterns = [
         CurrentUserAPIView.as_view(),
         name="current-user",
     ),
-
+    # api/v1/accounts/auth/me
+    
     path(
         "auth/logout",
         LogoutAPIView.as_view(),
         name="auth_logout",
     ),
-
+    # api/v1/accounts/auth/logout
+    
     path(
         "verify-email/<str:token>",
         VerifyEmailAPIView.as_view(),

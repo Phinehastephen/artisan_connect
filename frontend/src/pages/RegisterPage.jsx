@@ -75,7 +75,7 @@ export default function RegisterPage() {
     <section className="auth-page auth-page-wide" aria-labelledby="register-title">
       <p className="eyebrow">JOIN THE MARKETPLACE</p>
       <h1 id="register-title">Create your account</h1>
-      <p className="page-intro">Choose how you’ll use Artisan Connect.</p>
+      {/* <p className="page-intro">Choose how you’ll use Artisan Connect.</p> */}
 
       <div aria-label="Account type" className="role-switch" role="group">
         <button

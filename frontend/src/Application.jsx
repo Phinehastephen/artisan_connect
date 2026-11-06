@@ -4,6 +4,7 @@ import RoleRoute from './auth/RoleRoute'
 import LoginPage from './pages/LoginPage'
 import PasswordResetPage from './pages/PasswordResetPage'
 import RegisterPage from './pages/RegisterPage'
+import CustomerWorkspacePage from './pages/CustomerWorkspacePage'
 import './app-shell.css'
 
 const workspaces = [
@@ -34,7 +35,7 @@ function WorkspacePicker() {
         <p className="eyebrow">ARTISAN CONNECT</p>
         <h1 id="workspace-title">Choose a workspace</h1>
         <p className="page-intro">
-          Sign-in and workspace permissions are added in the next phase.
+          Find trusted local artisans and the right help for your next job.
         </p>
       </div>
 
@@ -128,7 +129,7 @@ function AppLayout() {
           <Route
             element={(
               <RoleRoute allowedRoles={['CUSTOMER']}>
-                <WorkspacePlaceholder title="Customer workspace" />
+                <CustomerWorkspacePage />
               </RoleRoute>
             )}
             path="/customer/*"

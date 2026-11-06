@@ -718,15 +718,20 @@ Planned enhancements include:
 - Consider labour-only data collection after the school defense; develop a price estimator only if separately approved and enough suitable, consented examples exist
 - Custom admin dashboard
 - Additional analytics
+- Live text chat as a future token-gated feature; define access limits, expiry, privacy, and moderation before implementation
+- Easy repeat booking: customers can rebook an artisan they've hired before without restarting discovery
 - Explore group/team artisan accounts for coordinated services (for example event planners and party teams); requires a separate authorization, booking ownership, and service design before implementation
+
 
 ### Version 3
 
 Long-term features include:
 
 - Flutter mobile application
-- Voice assistant
-- Video calling
+- Loyalty and rewards, after earning, redemption, and accounting rules are approved
+- Referrals for customers whose referred users complete their first booking
+- Audio messages as a future token-gated feature
+- Video messages (WebRTC) as a future premium feature; define access and safety rules first
 - Emergency requests
 
 ### Future Group and Team Artisan Work
@@ -736,6 +741,22 @@ Artisan Connect may later support businesses whose work is delivered by a team, 
 V1 remains based on an individual artisan owning their profile and each booking. Do not add group accounts, shared credentials, team membership, multi-artisan bookings, or payment splitting to V1. Before implementing the concept, define group ownership and member permissions, member verification, who accepts and manages a booking, service and availability representation, and how customer communications and any future payments are attributed.
 
 ---
+
+## End goal (An end-to-end service marketplace)
+Customers use Artisan Connect to discover, communicate with, book, manage, pay for, and review artisans. Artisans use it to manage their professional business activities.
+The platform focuses on building long-term relationships and repeat transactions.
+
+
+## Financial and Reward Concepts
+
+These are future product concepts, not authorization to add payment, commission, or token functionality to V1.
+
+- A proposed 10% booking commission needs an approved definition of the amount it applies to, when it is earned, and how refunds, disputes, and artisan payouts affect it.
+- Payment must have its own records and lifecycle (for example, `INITIATED → PENDING → SUCCESSFUL / FAILED → REFUNDED`). Booking completion or finalization does not imply payment settlement. Payment and booking state must remain separate.
+- Moniepoint and Paystack are candidate payment providers. Moniepoint is worth evaluating because it is used by the school; no provider has been selected. Compare supported payment methods, fees, settlement and payout behavior, refunds, webhook reliability, and integration support before choosing one.
+- Loyalty Points (LP) and Connect Points (CP) are proposed rewards/credits. Define eligible earning events, conversion and redemption rates, accounting/expiry rules, and feature entitlements before implementation. Do not treat either as cash or assume a token conversion algorithm.
+- Discovery and booking are intended to remain available without purchasing premium-feature credits. Any future token-gated chat, audio, or video access needs explicit pricing, limits, duration, and safety rules.
+
 
 ## 🔐 Important Architecture Decisions
 
@@ -749,6 +770,8 @@ The following decisions are part of the project's approved architecture:
 - Multiple active device sessions are supported.
 - Usernames are editable by customers (artisans keep the username they registered with).
 - Phone numbers remain private.
+- Booking state and payment state are separate; booking finalization is not evidence that a payment settled. Payment records and their lifecycle will be designed independently before payment integration.
+- Moniepoint and Paystack are payment-provider candidates; no gateway is approved until the required comparison is complete.
 - **One email, one account, one role — permanently.** An email address (case-insensitive) can belong to only one account, whether customer, artisan, or admin. An artisan who wants to hire another artisan must register a separate customer account with a different email. This applies to all future versions.
 - Customer suggestions for new service categories are postponed.
 - Date of birth is postponed to a later version.
@@ -813,7 +836,7 @@ Phase 7 → Deployment
 
 ### Current Development Direction
 
-The project has progressed from planning and system design into **Django backend development**.
+The project has an established Django API foundation and has started **frontend development**, beginning with the customer discovery workspace. Backend features and testing continue alongside the frontend.
 
 The backend work includes:
 
@@ -938,7 +961,7 @@ The exact structure may evolve as implementation progresses, but changes must re
 | Smart Search (V1)                        | ✅ Complete (backend) |
 | AI Features (recommendations, V2 search) | ⏳ Planned/Developing |
 | Labour Price Estimation                  | ⏳ Deferred to V2/V3  |
-| Frontend                                 | ⏳ Upcoming           |
+| Frontend                                 | 🔄 In Progress        |
 | Testing                                  | 🔄 Ongoing            |
 | Deployment                               | ⏳ Later Phase        |
 

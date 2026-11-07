@@ -231,6 +231,7 @@ def rank_artisans(latitude, longitude, service_id):
         ranked_artisans.append({
             "artisan": artisan,
             "distance_km": distance_km,
+            "is_working": item.get("is_working", False),
             **score_data,
         })
 

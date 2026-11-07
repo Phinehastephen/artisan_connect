@@ -224,10 +224,10 @@ Customers can:
 - Create and manage an account.
 - Search for services and artisans.
 - Use location-based discovery.
-- Book artisans.
+- Request bookings, follow their status, cancel eligible requests, and confirm or dispute completed work.
 - View booking history.
-- Review artisans after completed bookings.
-- Manage saved locations.
+- Review artisans after finalized bookings.
+- Create, view, update, and delete up to five saved locations.
 - Receive notifications.
 
 ### Artisan
@@ -376,6 +376,7 @@ Each result is a map marker containing only what a customer needs to discover an
 | `id`                               | Used to open the artisan's profile / book them                                                                                                                                 |
 | `name`                             | Business name (falls back to the artisan's full name)                                                                                                                          |
 | `is_verified`                      | Always true in results — only verified artisans are shown                                                                                                                      |
+| `is_working`                       | True when the artisan has an `IN_PROGRESS` Artisan Connect booking; otherwise there is no active in-app job recorded                                                            |
 | `distance_km`                      | Calculated on the server, measured to the same rounded position as the pin (so repeated searches from different points can't be used to work out the artisan's exact location) |
 | `location`                         | The artisan's location in readable words (e.g. "Yaba, Lagos")                                                                                                                  |
 | `latitude` / `longitude`           | Pin position, **rounded to ~110 m** so it never points at a specific building (an artisan's location may be their home)                                                        |
@@ -389,6 +390,7 @@ Backend → nearby artisans → rounded coordinates + distance → API response
    → Frontend → OpenStreetMap:  📍 Customer   🔵 Artisan   🔵 Artisan   🔵 Artisan
 ```
 
+- The customer map uses red for artisans with an active `IN_PROGRESS` Artisan Connect booking and green when no such in-app booking is recorded. This is informational only: it does not reflect work outside Artisan Connect or guarantee immediate availability. Customers may still send a normal booking request; V1 does not add reservations, waitlists, or schedule slots.
 - Artisans set their own location (`latitude`/`longitude`, plus a `default_location` description) through their profile. Only verified artisans can update it, and it has no cooldown.
 
 ### Address Lookup (OpenStreetMap)
@@ -404,9 +406,12 @@ OpenStreetMap on the frontend is for **visualization and navigation**: showing t
 
 ### Saved Location Rules
 
-- A customer can create, list, view, and delete their own saved locations (maximum five).
+- A customer can create, list, view, update, and delete their own saved locations (maximum five).
+- When saved through the customer workspace, an address is looked up with Nominatim and stored with the matching coordinates; changes remain scoped to the owning customer.
 - Saved locations are private to their owner. Requesting another customer's saved location — directly, or as `location_id` in a nearby search — returns **404 Not Found**, exactly like a location that doesn't exist, so saved locations can't be discovered by guessing IDs.
 - Nearby search is only available to customers, and is limited to 30 searches per minute per user. It can be limited to one service with `?service=<id>` (used by Smart Search).
+
+Customers can submit one review for a finalized booking from their booking history. Review creation remains tied to the authenticated customer and existing review rules.
 
 ### Job Location Privacy
 
@@ -596,7 +601,7 @@ The committed end-to-end simulation can also be run without Postman using `pytho
 | Unsure                   | Two or more services are close (e.g. `roof is leaking` → Carpentry or Plumbing) | "Did you mean…?" with up to 3 services to choose from                                          |
 | No match                 | Nothing matches, or the text is too vague (`I need help with something`)        | "We couldn't identify what you need. Please clarify…" plus the list of services to choose from |
 
-Only **active** services are ever matched. Keywords are managed by admins on each service's page in Django admin; the V1 starter set is English.
+Only **active** services are ever matched. Keywords are managed by admins on each service's page in Django admin; the V1 starter set is English. Hair Stylist (₦6,000–₦50,000) and Barber (₦3,000–₦15,000) are seeded as service-price references, not job quotes; admins can adjust the ranges.
 
 **Search log:** every search is recorded (customer, text, matched service, confidence) so admins can find words customers use that aren't keywords yet (filter on "No match"/"Unsure"), and as training data for V2. Search logs are deleted automatically after **12 months** by `python manage.py purge_search_logs` (schedule it daily).
 
@@ -836,7 +841,7 @@ Phase 7 → Deployment
 
 ### Current Development Direction
 
-The project has an established Django API foundation and has started **frontend development**, beginning with the customer discovery workspace. Backend features and testing continue alongside the frontend.
+The project has an established Django API foundation and has started **frontend development**. The customer workspace supports artisan discovery, booking management, saved locations, reviews, and customer profile editing. The artisan workspace supports booking management, profile editing under the approved verification and cooldown rules, readable service names, and admin-reviewed service change requests. Backend features and testing continue alongside the frontend.
 
 The backend work includes:
 

@@ -5,6 +5,7 @@ from urllib.error import URLError
 from django.core.cache import cache
 from django.test import TestCase
 from django.core.exceptions import ValidationError
+from rest_framework.test import APIClient
 
 from accounts.models import User
 from artisans.models import Artisan
@@ -65,6 +66,74 @@ class SavedLocationBusinessLogicTests(TestCase):
             self.customer.saved_locations.count(),
             5,
         )
+
+    def test_saved_location_can_be_updated(self):
+        from .services import update_saved_location
+
+        location = self._save_location(1)
+        updated = update_saved_location(
+            location,
+            name="Office",
+            address="Updated Address",
+        )
+
+        self.assertEqual(updated.name, "Office")
+        self.assertEqual(updated.address, "Updated Address")
+
+
+class SavedLocationUpdateAPITests(TestCase):
+    def setUp(self):
+        user = User.objects.create_user(
+            username="location_owner",
+            email="location_owner@example.com",
+            password="test-password",
+            role=User.Role.CUSTOMER,
+        )
+        self.customer = Customer.objects.create(user=user)
+        self.location = create_saved_location(
+            customer=self.customer,
+            name="Home",
+            address="Home Address",
+            latitude=6.524400,
+            longitude=3.379200,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=user)
+
+    def test_customer_can_update_owned_saved_location(self):
+        response = self.client.patch(
+            f"/api/v1/locations/saved/details/{self.location.id}",
+            {"name": "Office", "address": "Office Address"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["name"], "Office")
+        self.assertEqual(response.data["address"], "Office Address")
+
+    def test_customer_cannot_update_another_customers_location(self):
+        other_user = User.objects.create_user(
+            username="other_location_owner",
+            email="other_location_owner@example.com",
+            password="test-password",
+            role=User.Role.CUSTOMER,
+        )
+        other_customer = Customer.objects.create(user=other_user)
+        other_location = create_saved_location(
+            customer=other_customer,
+            name="Other",
+            address="Other Address",
+            latitude=6.524400,
+            longitude=3.379200,
+        )
+
+        response = self.client.patch(
+            f"/api/v1/locations/saved/details/{other_location.id}",
+            {"name": "Changed"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
 
 
 class DistanceCalculationTests(TestCase):
@@ -354,6 +423,24 @@ class MapNearbyArtisanFlowTests(TestCase):
         self.assertAlmostEqual(
             current_results[0]["distance_km"], 0.11, places=1)
 
+    def test_map_marks_only_in_progress_bookings_as_working(self):
+        from bookings.models import Booking
+
+        Booking.objects.create(
+            customer=self.customer,
+            artisan=self.nearby,
+            service=self.service,
+            status=Booking.Status.IN_PROGRESS,
+        )
+
+        results = find_nearby_artisans(
+            6.524400,
+            3.379200,
+            service=self.service,
+        )
+
+        self.assertTrue(results[0]["is_working"])
+
 
 def _nominatim_response(payload):
     response = MagicMock()
@@ -504,12 +591,34 @@ class NearbyArtisanMarkerTests(TestCase):
             {
                 "id", "name", "is_verified", "distance_km", "location",
                 "latitude", "longitude", "average_rating", "review_count",
-                "starting_price", "maximum_price",
+                "starting_price", "maximum_price", "is_working",
             },
         )
         self.assertEqual(marker["name"], "John Plumbing")
         self.assertTrue(marker["is_verified"])
+        self.assertFalse(marker["is_working"])
         self.assertEqual(marker["location"], "Yaba, Lagos")
+
+    def test_marker_shows_working_without_exposing_booking_details(self):
+        from bookings.models import Booking
+
+        user = User.objects.create_user(
+            username="marker_customer",
+            email="marker_customer@example.com",
+        )
+        customer = Customer.objects.create(user=user)
+        Booking.objects.create(
+            customer=customer,
+            artisan=self.artisan,
+            service=self.service,
+            status=Booking.Status.IN_PROGRESS,
+        )
+
+        marker = self._markers()[0]
+
+        self.assertTrue(marker["is_working"])
+        self.assertNotIn("customer", marker)
+        self.assertNotIn("job_address", marker)
 
     def test_marker_coordinates_are_rounded(self):
         marker = self._markers()[0]

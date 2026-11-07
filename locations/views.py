@@ -24,7 +24,7 @@ from .serializers import (
 
 from .models import SavedLocation
 from .serializers import SavedLocationSerializer
-from .services import create_saved_location
+from .services import create_saved_location, update_saved_location
 
 
 class SavedLocationListCreateView(APIView):
@@ -119,6 +119,50 @@ class SavedLocationDetailView(APIView):
 
         return Response(
             status=status.HTTP_204_NO_CONTENT
+        )
+
+    def patch(self, request, pk, *args, **kwargs):
+        try:
+            saved_location = SavedLocation.objects.get(
+                pk=pk,
+                customer=request.user.customer_profile,
+            )
+        except SavedLocation.DoesNotExist:
+            return Response(
+                {"error": "Saved location not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = SavedLocationSerializer(
+            saved_location,
+            data=request.data,
+            partial=True,
+        )
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not serializer.validated_data:
+            return Response(
+                {"error": "No changes were provided."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            updated_location = update_saved_location(
+                saved_location,
+                **serializer.validated_data,
+            )
+        except ValidationError as error:
+            return Response(
+                {"error": error.messages},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            SavedLocationSerializer(updated_location).data,
+            status=status.HTTP_200_OK,
         )
         
 

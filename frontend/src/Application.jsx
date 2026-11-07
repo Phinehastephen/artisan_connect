@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import PasswordResetPage from './pages/PasswordResetPage'
 import RegisterPage from './pages/RegisterPage'
 import CustomerWorkspacePage from './pages/CustomerWorkspacePage'
+import ArtisanWorkspacePage from './pages/ArtisanWorkspacePage'
 import './app-shell.css'
 
 const workspaces = [
@@ -137,7 +138,7 @@ function AppLayout() {
           <Route
             element={(
               <RoleRoute allowedRoles={['ARTISAN']}>
-                <WorkspacePlaceholder title="Artisan workspace" />
+                <ArtisanWorkspacePage />
               </RoleRoute>
             )}
             path="/artisan/*"

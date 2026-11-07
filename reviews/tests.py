@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from accounts.models import User
 from customers.models import Customer
@@ -192,7 +193,7 @@ class ReviewBusinessLogicTests(TestCase):
                 rating=5.0,
                 comment="Excellent.",
             )
-            
+
     def test_review_can_only_be_edited_once(self):
         review = create_review(
             booking=self.booking,
@@ -215,3 +216,63 @@ class ReviewBusinessLogicTests(TestCase):
                 rating=5.0,
                 comment="Excellent.",
             )
+
+
+class ReviewCreateAPITests(TestCase):
+    def setUp(self):
+        customer_user = User.objects.create_user(
+            username="review_api_customer",
+            email="review_api_customer@example.com",
+            password="test-password",
+            role=User.Role.CUSTOMER,
+        )
+        self.customer = Customer.objects.create(user=customer_user)
+        artisan_user = User.objects.create_user(
+            username="review_api_artisan",
+            email="review_api_artisan@example.com",
+            password="test-password",
+            role=User.Role.ARTISAN,
+        )
+        self.artisan = Artisan.objects.create(
+            user=artisan_user,
+            phone_number="08000000000",
+            verification_status=Artisan.VerificationStatus.VERIFIED,
+        )
+        self.service = Service.objects.create(
+            name="Review API Plumbing",
+            description="",
+            minimum_price=1000,
+            maximum_price=5000,
+            is_active=True,
+        )
+        self.booking = Booking.objects.create(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            status=Booking.Status.FINALIZED,
+            finalized_at=timezone.now(),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=customer_user)
+
+    def test_customer_can_review_finalized_booking(self):
+        bookings_response = self.client.get("/api/v1/bookings/list")
+        self.assertEqual(bookings_response.status_code, 200)
+        self.assertFalse(bookings_response.data[0]["has_review"])
+
+        response = self.client.post(
+            "/api/v1/reviews/review/create",
+            {
+                "booking": self.booking.id,
+                "rating": "4.5",
+                "comment": "Great work and professional service.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(str(response.data["rating"]), "4.5")
+        self.assertEqual(Booking.objects.get(pk=self.booking.pk).review.rating, 4.5)
+
+        bookings_response = self.client.get("/api/v1/bookings/list")
+        self.assertTrue(bookings_response.data[0]["has_review"])

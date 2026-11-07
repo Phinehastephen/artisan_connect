@@ -25,6 +25,8 @@ export default function CustomerBookings() {
   const [notice, setNotice] = useState('')
   const [disputeId, setDisputeId] = useState(null)
   const [disputeReason, setDisputeReason] = useState('')
+  const [reviewDrafts, setReviewDrafts] = useState({})
+  const [reviewSubmittingId, setReviewSubmittingId] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -84,6 +86,32 @@ export default function CustomerBookings() {
       return
     }
     runAction(booking, 'disagree', { reason: disputeReason })
+  }
+
+  async function submitReview(event, booking) {
+    event.preventDefault()
+    const draft = reviewDrafts[booking.id] || { rating: '5', comment: '' }
+    setError('')
+    setNotice('')
+    setReviewSubmittingId(booking.id)
+    try {
+      await apiRequest('/reviews/review/create', {
+        method: 'POST',
+        body: {
+          booking: booking.id,
+          rating: Number(draft.rating),
+          comment: draft.comment,
+        },
+      })
+      setBookings((current) => current.map((item) => (
+        item.id === booking.id ? { ...item, has_review: true } : item
+      )))
+      setNotice(`Your review for booking #${booking.id} was submitted.`)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setReviewSubmittingId(null)
+    }
   }
 
   return (
@@ -218,6 +246,66 @@ export default function CustomerBookings() {
                   <p className="booking-follow-up">
                     Your dispute is awaiting admin review. The booking team will update this status when it is resolved.
                   </p>
+                )}
+
+                {booking.status === 'FINALIZED' && booking.has_review && (
+                  <p className="review-submitted">
+                    <i aria-hidden="true" className="bi bi-check-circle-fill me-1" />
+                    You’ve reviewed this booking.
+                  </p>
+                )}
+
+                {booking.status === 'FINALIZED' && !booking.has_review && (
+                  <form className="booking-review-form" onSubmit={(event) => submitReview(event, booking)}>
+                    <h4>How was the service?</h4>
+                    <div className="row g-3">
+                      <div className="col-12 col-sm-4">
+                        <label className="form-label" htmlFor={`review-rating-${booking.id}`}>Rating</label>
+                        <select
+                          className="form-select"
+                          id={`review-rating-${booking.id}`}
+                          onChange={(event) => setReviewDrafts((current) => ({
+                            ...current,
+                            [booking.id]: {
+                              ...current[booking.id],
+                              rating: event.target.value,
+                            },
+                          }))}
+                          value={reviewDrafts[booking.id]?.rating || '5'}
+                        >
+                          {[5, 4, 3, 2, 1].map((rating) => (
+                            <option key={rating} value={rating}>{rating} {rating === 1 ? 'star' : 'stars'}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-12 col-sm-8">
+                        <label className="form-label" htmlFor={`review-comment-${booking.id}`}>
+                          Comment <span>(optional)</span>
+                        </label>
+                        <textarea
+                          className="form-control"
+                          id={`review-comment-${booking.id}`}
+                          maxLength={2000}
+                          onChange={(event) => setReviewDrafts((current) => ({
+                            ...current,
+                            [booking.id]: {
+                              ...current[booking.id],
+                              comment: event.target.value,
+                            },
+                          }))}
+                          rows={2}
+                          value={reviewDrafts[booking.id]?.comment || ''}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-dark mt-3"
+                      disabled={reviewSubmittingId === booking.id}
+                      type="submit"
+                    >
+                      {reviewSubmittingId === booking.id ? 'Submitting…' : 'Submit review'}
+                    </button>
+                  </form>
                 )}
 
                 {cancellableStatuses.includes(booking.status) && (

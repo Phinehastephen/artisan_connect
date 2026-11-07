@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { apiRequest } from '../api/client'
 import CustomerBookings from './CustomerBookings'
+import CustomerLocations from './CustomerLocations'
+import CustomerProfile from './CustomerProfile'
 import './customer-workspace.css'
 
 class LocationAccessError extends Error {}
@@ -50,15 +52,16 @@ function ArtisanMap({ origin, results }) {
     results.forEach((result) => {
       if (!Number.isFinite(result.latitude) || !Number.isFinite(result.longitude)) return
 
+      const isWorking = result.is_working
       const marker = L.circleMarker([result.latitude, result.longitude], {
-        color: '#245b42',
-        fillColor: '#4b936d',
+        color: isWorking ? '#a12f2f' : '#245b42',
+        fillColor: isWorking ? '#c9473d' : '#4b936d',
         fillOpacity: 0.9,
         radius: 8,
         weight: 2,
       }).addTo(map)
       const popup = document.createElement('span')
-      popup.textContent = result.name
+      popup.textContent = `${result.name} — ${isWorking ? 'Working now' : 'No active Artisan Connect job'}`
       marker.bindPopup(popup)
       points.push(marker.getLatLng())
     })
@@ -70,7 +73,18 @@ function ArtisanMap({ origin, results }) {
     return () => map.remove()
   }, [origin, results])
 
-  return <div aria-label="Map of matching artisans" className="artisan-map" ref={mapElement} />
+  return (
+    <div className="artisan-map-panel">
+      <div aria-label="Availability legend" className="availability-legend">
+        <span><i className="availability-dot availability-dot-free" /> No active job</span>
+        <span><i className="availability-dot availability-dot-working" /> Working now</span>
+      </div>
+      <div aria-label="Map of matching artisans" className="artisan-map" ref={mapElement} />
+      <p className="availability-disclaimer">
+        Status reflects active Artisan Connect bookings only. A booking request is not a confirmed appointment.
+      </p>
+    </div>
+  )
 }
 
 function formatDistance(distance) {
@@ -92,6 +106,12 @@ export default function CustomerWorkspacePage() {
   const [loadingServices, setLoadingServices] = useState(true)
   const [loadingLocations, setLoadingLocations] = useState(true)
   const [activeSection, setActiveSection] = useState('discover')
+  const [selectedArtisan, setSelectedArtisan] = useState(null)
+  const [bookingLocationType, setBookingLocationType] = useState('current')
+  const [bookingLocationId, setBookingLocationId] = useState('')
+  const [bookingAddress, setBookingAddress] = useState('')
+  const [bookingError, setBookingError] = useState('')
+  const [bookingSubmitting, setBookingSubmitting] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -179,6 +199,50 @@ export default function CustomerWorkspacePage() {
     }
   }
 
+  async function submitBooking(event) {
+    event.preventDefault()
+    setBookingError('')
+    setBookingSubmitting(true)
+
+    try {
+      const body = {
+        artisan: selectedArtisan.id,
+        service: searchResult.service.id,
+        job_location_type: bookingLocationType,
+      }
+
+      if (bookingLocationType === 'saved') {
+        if (!bookingLocationId) throw new Error('Choose a saved job location.')
+        body.job_location_id = Number(bookingLocationId)
+      } else if (bookingLocationType === 'current') {
+        const currentCoordinates = await getBrowserCoordinates()
+        body.job_latitude = currentCoordinates.latitude
+        body.job_longitude = currentCoordinates.longitude
+      } else {
+        const address = bookingAddress.trim()
+        if (address.length < 3) throw new Error('Enter a complete job address.')
+        const params = new URLSearchParams({ q: address })
+        const places = await apiRequest(`/locations/geocode?${params.toString()}`)
+        if (!places.length) throw new Error('No matching address was found. Try adding your area or city.')
+        body.job_address = address
+        body.job_latitude = places[0].latitude
+        body.job_longitude = places[0].longitude
+      }
+
+      await apiRequest('/bookings/booking/create', {
+        method: 'POST',
+        body,
+      })
+      setSelectedArtisan(null)
+      setBookingAddress('')
+      setActiveSection('bookings')
+    } catch (requestError) {
+      setBookingError(requestError.message)
+    } finally {
+      setBookingSubmitting(false)
+    }
+  }
+
   const suggestions = searchResult?.suggestions || searchResult?.services || []
   const results = searchResult?.results || []
 
@@ -203,9 +267,33 @@ export default function CustomerWorkspacePage() {
           <i aria-hidden="true" className="bi bi-calendar2-check me-2" />
           My bookings
         </button>
+        <button
+          aria-current={activeSection === 'locations' ? 'page' : undefined}
+          className={activeSection === 'locations' ? 'active' : ''}
+          onClick={() => setActiveSection('locations')}
+          type="button"
+        >
+          <i aria-hidden="true" className="bi bi-geo-alt me-2" />
+          Saved locations
+        </button>
+        <button
+          aria-current={activeSection === 'profile' ? 'page' : undefined}
+          className={activeSection === 'profile' ? 'active' : ''}
+          onClick={() => setActiveSection('profile')}
+          type="button"
+        >
+          <i aria-hidden="true" className="bi bi-person me-2" />
+          My profile
+        </button>
       </nav>
 
-      {activeSection === 'bookings' ? <CustomerBookings /> : (
+      {activeSection === 'bookings' ? <CustomerBookings />
+        : activeSection === 'locations' ? (
+          <CustomerLocations
+            locations={savedLocations}
+            onLocationsChange={setSavedLocations}
+          />
+        ) : activeSection === 'profile' ? <CustomerProfile /> : (
         <>
       <section aria-labelledby="customer-welcome-title" className="customer-hero">
         <div className="customer-hero-copy">
@@ -332,6 +420,10 @@ export default function CustomerWorkspacePage() {
                             <i aria-hidden="true" className="bi bi-patch-check-fill" /> Verified artisan
                           </span>
                         )}
+                        <span className={`artisan-availability${artisan.is_working ? ' working' : ''}`}>
+                          <i aria-hidden="true" className="availability-dot" />
+                          {artisan.is_working ? 'Working now' : 'No active Artisan Connect job'}
+                        </span>
                       </div>
                       <span className="match-score">{Math.round(artisan.total_score)}<small>/100</small></span>
                     </div>
@@ -344,6 +436,19 @@ export default function CustomerWorkspacePage() {
                       <span><i aria-hidden="true" className="bi bi-briefcase" /> {artisan.completed_jobs} completed</span>
                     </div>
                     {artisan.location && <p className="artisan-area">{artisan.location}</p>}
+                    <button
+                      className="btn btn-dark artisan-book-button"
+                      onClick={() => {
+                        setSelectedArtisan(artisan)
+                        setBookingLocationType(savedLocations.length ? 'saved' : 'current')
+                        setBookingLocationId(savedLocations[0] ? String(savedLocations[0].id) : '')
+                        setBookingError('')
+                      }}
+                      type="button"
+                    >
+                      Request booking
+                      <i aria-hidden="true" className="bi bi-arrow-right ms-2" />
+                    </button>
                   </article>
                 ))}
               </div>
@@ -389,6 +494,117 @@ export default function CustomerWorkspacePage() {
         </section>
       )}
         </>
+      )}
+      {selectedArtisan && (
+        <div className="booking-dialog-backdrop">
+          <section
+            aria-labelledby="booking-dialog-title"
+            aria-modal="true"
+            className="booking-dialog"
+            role="dialog"
+          >
+            <button
+              aria-label="Close booking request"
+              className="booking-dialog-close"
+              onClick={() => setSelectedArtisan(null)}
+              type="button"
+            >
+              <i aria-hidden="true" className="bi bi-x-lg" />
+            </button>
+            <p className="eyebrow">NEW REQUEST</p>
+            <h2 id="booking-dialog-title">Request a booking</h2>
+            <p className="booking-dialog-summary">
+              {searchResult.service.name} with {selectedArtisan.name}
+            </p>
+            {selectedArtisan.is_working && (
+              <p className="booking-working-note">
+                This artisan is marked as working on another Artisan Connect job. You can still send a request; the artisan must accept it.
+              </p>
+            )}
+            {bookingError && <div className="alert alert-danger" role="alert">{bookingError}</div>}
+            <form className="booking-dialog-form" onSubmit={submitBooking}>
+              <fieldset>
+                <legend>Where is the job?</legend>
+                {savedLocations.length > 0 && (
+                  <label className="booking-location-option">
+                    <input
+                      checked={bookingLocationType === 'saved'}
+                      name="booking-location"
+                      onChange={() => setBookingLocationType('saved')}
+                      type="radio"
+                    />
+                    Use a saved location
+                  </label>
+                )}
+                <label className="booking-location-option">
+                  <input
+                    checked={bookingLocationType === 'current'}
+                    name="booking-location"
+                    onChange={() => setBookingLocationType('current')}
+                    type="radio"
+                  />
+                  Use my current location
+                </label>
+                <label className="booking-location-option">
+                  <input
+                    checked={bookingLocationType === 'custom'}
+                    name="booking-location"
+                    onChange={() => setBookingLocationType('custom')}
+                    type="radio"
+                  />
+                  Enter an address
+                </label>
+              </fieldset>
+
+              {bookingLocationType === 'saved' && (
+                <div className="mb-3">
+                  <label className="form-label" htmlFor="booking-saved-location">Saved location</label>
+                  <select
+                    className="form-select"
+                    id="booking-saved-location"
+                    onChange={(event) => setBookingLocationId(event.target.value)}
+                    required
+                    value={bookingLocationId}
+                  >
+                    {savedLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {location.name} — {location.address}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {bookingLocationType === 'current' && (
+                <p className="field-note">
+                  Your browser will ask permission to share the job location. The address is visible only to you and the assigned artisan after acceptance.
+                </p>
+              )}
+              {bookingLocationType === 'custom' && (
+                <div className="mb-3">
+                  <label className="form-label" htmlFor="booking-custom-address">Job address</label>
+                  <input
+                    autoComplete="street-address"
+                    className="form-control"
+                    id="booking-custom-address"
+                    minLength={3}
+                    onChange={(event) => setBookingAddress(event.target.value)}
+                    placeholder="Street, area, city"
+                    required
+                    value={bookingAddress}
+                  />
+                </div>
+              )}
+              <div className="booking-dialog-actions">
+                <button className="btn btn-outline-dark" onClick={() => setSelectedArtisan(null)} type="button">
+                  Go back
+                </button>
+                <button className="btn btn-dark" disabled={bookingSubmitting} type="submit">
+                  {bookingSubmitting ? 'Sending request…' : 'Send booking request'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
       )}
     </div>
   )

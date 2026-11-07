@@ -43,7 +43,7 @@ class BookingListAPIView(APIView):
         else:
             bookings = Booking.objects.filter(customer__user=user)
 
-        bookings = bookings.order_by("-created_at")
+        bookings = bookings.select_related("review").order_by("-created_at")
         serializer = BookingSerializer(
             bookings, many=True, context={"request": request}
         )

@@ -101,6 +101,7 @@ class NearbyArtisanMarkerSerializer(serializers.Serializer):
     id = serializers.IntegerField(source="artisan.id")
     name = serializers.SerializerMethodField()
     is_verified = serializers.SerializerMethodField()
+    is_working = serializers.SerializerMethodField()
     distance_km = serializers.FloatField()
     location = serializers.CharField(source="artisan.default_location", allow_null=True)
     latitude = serializers.SerializerMethodField()
@@ -120,6 +121,9 @@ class NearbyArtisanMarkerSerializer(serializers.Serializer):
 
     def get_is_verified(self, item):
         return item["artisan"].verification_status == "VERIFIED"
+
+    def get_is_working(self, item):
+        return bool(item.get("is_working", False))
 
     def get_latitude(self, item):
         return round(float(item["artisan"].latitude), MAP_COORDINATE_DECIMALS)

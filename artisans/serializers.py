@@ -64,6 +64,7 @@ class ArtisanPublicSerializer(serializers.ModelSerializer):
 
 class ArtisanProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    services = ServiceSerializer(many=True, read_only=True)
 
     class Meta:
         model = Artisan

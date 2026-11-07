@@ -1,5 +1,6 @@
 from artisans.models import Artisan
 from customers.models import Customer
+from bookings.models import Booking
 
 import hashlib
 import json
@@ -53,6 +54,19 @@ def create_saved_location(
     saved_location.full_clean()
     saved_location.save()
 
+    return saved_location
+
+
+@transaction.atomic
+def update_saved_location(saved_location, **changes):
+    saved_location = SavedLocation.objects.select_for_update().get(
+        pk=saved_location.pk
+    )
+    for field, value in changes.items():
+        setattr(saved_location, field, value)
+
+    saved_location.full_clean()
+    saved_location.save()
     return saved_location
 
 
@@ -246,6 +260,18 @@ def find_nearby_artisans(latitude, longitude, service=None):
                 "artisan": artisan,
                 "distance_km": round(distance_km, 2),
             })
+
+    artisan_ids = [item["artisan"].id for item in nearby_artisans]
+    working_artisan_ids = set(
+        Booking.objects.filter(
+            artisan_id__in=artisan_ids,
+            status=Booking.Status.IN_PROGRESS,
+        )
+        .values_list("artisan_id", flat=True)
+        .distinct()
+    )
+    for item in nearby_artisans:
+        item["is_working"] = item["artisan"].id in working_artisan_ids
 
     return rank_artisans(nearby_artisans)
 

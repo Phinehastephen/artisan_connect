@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.core.exceptions import ObjectDoesNotExist
 from .models import Booking
 from artisans.models import Artisan
 from services.models import Service
@@ -16,6 +17,7 @@ class BookingSerializer(serializers.ModelSerializer):
     service_detail = ServiceSerializer(source="service", read_only=True)
 
     awaiting_customer_confirmation = serializers.SerializerMethodField()
+    has_review = serializers.SerializerMethodField()
 
     JOB_LOCATION_FIELDS = ("job_address", "job_latitude", "job_longitude")
 
@@ -45,6 +47,7 @@ class BookingSerializer(serializers.ModelSerializer):
             "finalized_at",
             "finalization_method",
             "awaiting_customer_confirmation",
+            "has_review",
             "dispute_reason",
             "disputed_at",
         ]
@@ -81,6 +84,13 @@ class BookingSerializer(serializers.ModelSerializer):
 
     def get_awaiting_customer_confirmation(self, booking):
         return booking.status == Booking.Status.COMPLETED
+
+    def get_has_review(self, booking):
+        try:
+            booking.review
+        except ObjectDoesNotExist:
+            return False
+        return True
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):

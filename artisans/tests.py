@@ -554,6 +554,27 @@ class ServiceChangeRequestApiAndEmailTests(TestCase):
         for evidence in ServiceQualificationEvidence.objects.all():
             evidence.file.delete(save=False)
 
+    def test_artisan_profile_returns_named_services_and_accepts_profile_edits(self):
+        self.client.force_authenticate(user=self.artisan_user)
+
+        profile_response = self.client.get("/api/v1/artisans/me")
+
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertEqual(
+            [service["name"] for service in profile_response.data["services"]],
+            ["Plumbing"],
+        )
+
+        update_response = self.client.patch(
+            "/api/v1/artisans/me",
+            {"business_name": "Bright Plumbing"},
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.data["business_name"], "Bright Plumbing")
+        self.assertEqual(update_response.data["services"][0]["name"], "Plumbing")
+
     def test_artisan_cannot_submit_a_request_for_another_artisan(self):
         self.client.force_authenticate(user=self.artisan_user)
 

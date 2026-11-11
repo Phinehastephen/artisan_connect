@@ -99,6 +99,11 @@ export default function CustomerWorkspacePage() {
   const [locationId, setLocationId] = useState('')
   const [coordinates, setCoordinates] = useState(null)
   const [searchResult, setSearchResult] = useState(null)
+  const [scopeQuestions, setScopeQuestions] = useState([])
+  const [scopeAnswers, setScopeAnswers] = useState({})
+  const [scopeSearchParams, setScopeSearchParams] = useState('')
+  const [scopeSubmitted, setScopeSubmitted] = useState(false)
+  const [submittingScope, setSubmittingScope] = useState(false)
   const [serviceError, setServiceError] = useState('')
   const [locationError, setLocationError] = useState('')
   const [error, setError] = useState('')
@@ -107,6 +112,8 @@ export default function CustomerWorkspacePage() {
   const [loadingLocations, setLoadingLocations] = useState(true)
   const [activeSection, setActiveSection] = useState('discover')
   const [selectedArtisan, setSelectedArtisan] = useState(null)
+  const [selectedBookingService, setSelectedBookingService] = useState(null)
+  const [repeatingBooking, setRepeatingBooking] = useState(false)
   const [bookingLocationType, setBookingLocationType] = useState('current')
   const [bookingLocationId, setBookingLocationId] = useState('')
   const [bookingAddress, setBookingAddress] = useState('')
@@ -166,6 +173,11 @@ export default function CustomerWorkspacePage() {
     setQuery(requestedQuery)
     setError('')
     setLocationError('')
+    setSearchResult(null)
+    setScopeQuestions([])
+    setScopeAnswers({})
+    setScopeSearchParams('')
+    setScopeSubmitted(false)
     setLoading(true)
 
     try {
@@ -186,7 +198,25 @@ export default function CustomerWorkspacePage() {
         params.set('longitude', String(currentCoordinates.longitude))
       }
 
+      const previewParams = new URLSearchParams(params)
+      previewParams.set('resolve_only', 'true')
+      const preview = await apiRequest(`/ai/search?${previewParams.toString()}`)
+      if (preview.confidence !== 'confident' || !preview.service) {
+        setScopeSubmitted(true)
+        setSearchResult(preview)
+        return
+      }
+
+      const questions = await apiRequest(`/services/${preview.service.id}/scope`)
+      setScopeQuestions(questions)
+      if (questions.length) {
+        setScopeSearchParams(params.toString())
+        setSearchResult(preview)
+        return
+      }
+
       const result = await apiRequest(`/ai/search?${params.toString()}`)
+      setScopeSubmitted(true)
       setSearchResult(result)
     } catch (requestError) {
       if (requestError instanceof LocationAccessError) {
@@ -199,6 +229,62 @@ export default function CustomerWorkspacePage() {
     }
   }
 
+  async function submitScopeAnswers(event) {
+    event.preventDefault()
+    setError('')
+    setSubmittingScope(true)
+    try {
+      const result = await apiRequest(`/ai/search?${scopeSearchParams}`)
+      setSearchResult(result)
+      setScopeSubmitted(true)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setSubmittingScope(false)
+    }
+  }
+
+  async function handleRepeatBooking(booking) {
+    const service = booking.service_detail
+    const artisan = booking.artisan_detail
+    if (!service?.id || !artisan?.id) {
+      throw new Error('This booking does not have enough details to start a repeat request.')
+    }
+    if (!service.is_active) {
+      throw new Error('This service is no longer available for new bookings.')
+    }
+
+    const questions = await apiRequest(`/services/${service.id}/scope`)
+    const previousAnswers = new Map(
+      (booking.scope_answers || []).map((answer) => [answer.key, answer.value]),
+    )
+    const answers = {}
+    questions.forEach((question) => {
+      const previousValue = previousAnswers.get(question.key)
+      const matchingOption = question.options.find((option) => option.value === previousValue)
+      if (matchingOption) answers[question.id] = String(matchingOption.id)
+    })
+
+    setError('')
+    setBookingError('')
+    setSearchResult(null)
+    setScopeQuestions(questions)
+    setScopeAnswers(answers)
+    setScopeSearchParams('')
+    setScopeSubmitted(true)
+    setSelectedBookingService(service)
+    setSelectedArtisan({
+      id: artisan.id,
+      name: artisan.business_name || artisan.user?.full_name || 'Artisan',
+      is_working: false,
+    })
+    setBookingLocationType(savedLocations.length ? 'saved' : 'current')
+    setBookingLocationId(savedLocations[0] ? String(savedLocations[0].id) : '')
+    setBookingAddress('')
+    setRepeatingBooking(true)
+    setActiveSection('discover')
+  }
+
   async function submitBooking(event) {
     event.preventDefault()
     setBookingError('')
@@ -207,8 +293,12 @@ export default function CustomerWorkspacePage() {
     try {
       const body = {
         artisan: selectedArtisan.id,
-        service: searchResult.service.id,
+        service: selectedBookingService.id,
         job_location_type: bookingLocationType,
+        scope_answers: scopeQuestions.map((question) => ({
+          question: question.id,
+          option: Number(scopeAnswers[question.id]),
+        })),
       }
 
       if (bookingLocationType === 'saved') {
@@ -234,6 +324,8 @@ export default function CustomerWorkspacePage() {
         body,
       })
       setSelectedArtisan(null)
+      setSelectedBookingService(null)
+      setRepeatingBooking(false)
       setBookingAddress('')
       setActiveSection('bookings')
     } catch (requestError) {
@@ -287,7 +379,7 @@ export default function CustomerWorkspacePage() {
         </button>
       </nav>
 
-      {activeSection === 'bookings' ? <CustomerBookings />
+      {activeSection === 'bookings' ? <CustomerBookings onRepeatBooking={handleRepeatBooking} />
         : activeSection === 'locations' ? (
           <CustomerLocations
             locations={savedLocations}
@@ -399,12 +491,51 @@ export default function CustomerWorkspacePage() {
               </h2>
               <p className="page-intro">{searchResult.message}</p>
             </div>
-            {searchResult.confidence === 'confident' && (
+            {searchResult.confidence === 'confident' && scopeSubmitted && (
               <span className="results-count">{results.length} {results.length === 1 ? 'artisan' : 'artisans'}</span>
             )}
           </div>
 
-          {searchResult.confidence === 'confident' && results.length > 0 && (
+          {searchResult.confidence === 'confident' && scopeQuestions.length > 0 && !scopeSubmitted && (
+            <form className="service-scope-form" onSubmit={submitScopeAnswers}>
+              <p className="eyebrow">TELL US ABOUT THE JOB</p>
+              <h3>Choose the details that match your request</h3>
+              <p className="field-note">
+                These structured details help the artisan understand the work. They do not calculate or promise a price.
+              </p>
+              <div className="service-scope-grid">
+                {scopeQuestions.map((question) => (
+                  <label className="form-label" htmlFor={`scope-question-${question.id}`} key={question.id}>
+                    {question.label}
+                    <select
+                      className="form-select"
+                      id={`scope-question-${question.id}`}
+                      onChange={(event) => setScopeAnswers((current) => ({
+                        ...current,
+                        [question.id]: event.target.value,
+                      }))}
+                      required
+                      value={scopeAnswers[question.id] || ''}
+                    >
+                      <option disabled value="">Choose an option</option>
+                      {question.options.map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+              <button
+                className="btn btn-dark"
+                disabled={submittingScope || scopeQuestions.some((question) => !scopeAnswers[question.id])}
+                type="submit"
+              >
+                {submittingScope ? 'Finding artisans…' : 'Find artisans'}
+              </button>
+            </form>
+          )}
+
+          {searchResult.confidence === 'confident' && scopeSubmitted && results.length > 0 && (
             <div className="results-layout">
               <div aria-label="Matching artisans" className="artisan-results">
                 {results.map((artisan) => (
@@ -440,6 +571,8 @@ export default function CustomerWorkspacePage() {
                       className="btn btn-dark artisan-book-button"
                       onClick={() => {
                         setSelectedArtisan(artisan)
+                        setSelectedBookingService(searchResult.service)
+                        setRepeatingBooking(false)
                         setBookingLocationType(savedLocations.length ? 'saved' : 'current')
                         setBookingLocationId(savedLocations[0] ? String(savedLocations[0].id) : '')
                         setBookingError('')
@@ -456,7 +589,7 @@ export default function CustomerWorkspacePage() {
             </div>
           )}
 
-          {searchResult.confidence === 'confident' && results.length === 0 && (
+          {searchResult.confidence === 'confident' && scopeSubmitted && results.length === 0 && (
             <div className="empty-results">
               <i aria-hidden="true" className="bi bi-geo-alt" />
               <h3>No matching artisans nearby yet</h3>
@@ -511,11 +644,56 @@ export default function CustomerWorkspacePage() {
             >
               <i aria-hidden="true" className="bi bi-x-lg" />
             </button>
-            <p className="eyebrow">NEW REQUEST</p>
-            <h2 id="booking-dialog-title">Request a booking</h2>
+            <p className="eyebrow">{repeatingBooking ? 'REPEAT REQUEST' : 'NEW REQUEST'}</p>
+            <h2 id="booking-dialog-title">{repeatingBooking ? 'Book this artisan again' : 'Request a booking'}</h2>
             <p className="booking-dialog-summary">
-              {searchResult.service.name} with {selectedArtisan.name}
+              {selectedBookingService.name} with {selectedArtisan.name}
             </p>
+            {scopeQuestions.length > 0 && (
+              repeatingBooking ? (
+                <div className="service-scope-grid booking-repeat-scope">
+                  {scopeQuestions.map((question) => (
+                    <label className="form-label" htmlFor={`repeat-scope-${question.id}`} key={question.id}>
+                      {question.label}
+                      <select
+                        className="form-select"
+                        id={`repeat-scope-${question.id}`}
+                        onChange={(event) => setScopeAnswers((current) => ({
+                          ...current,
+                          [question.id]: event.target.value,
+                        }))}
+                        required
+                        value={scopeAnswers[question.id] || ''}
+                      >
+                        <option disabled value="">Choose an option</option>
+                        {question.options.map((option) => (
+                          <option key={option.id} value={option.id}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <dl className="booking-scope-summary">
+                  {scopeQuestions.map((question) => {
+                    const selectedOption = question.options.find(
+                      (option) => String(option.id) === String(scopeAnswers[question.id]),
+                    )
+                    return (
+                      <div key={question.id}>
+                        <dt>{question.label}</dt>
+                        <dd>{selectedOption?.label || 'Not selected'}</dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+              )
+            )}
+            {repeatingBooking && (
+              <p className="field-note">
+                Review the job details and choose where the new job will take place. This sends a new request; it does not change your previous booking.
+              </p>
+            )}
             {selectedArtisan.is_working && (
               <p className="booking-working-note">
                 This artisan is marked as working on another Artisan Connect job. You can still send a request; the artisan must accept it.
@@ -599,7 +777,7 @@ export default function CustomerWorkspacePage() {
                   Go back
                 </button>
                 <button className="btn btn-dark" disabled={bookingSubmitting} type="submit">
-                  {bookingSubmitting ? 'Sending request…' : 'Send booking request'}
+                  {bookingSubmitting ? 'Sending request…' : repeatingBooking ? 'Send repeat request' : 'Send booking request'}
                 </button>
               </div>
             </form>

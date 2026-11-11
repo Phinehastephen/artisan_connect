@@ -10,6 +10,7 @@ from services.models import Service
 class SmartSearchQuerySerializer(NearbyArtisanQuerySerializer):
     q = serializers.CharField(
         min_length=2, max_length=200, trim_whitespace=True)
+    resolve_only = serializers.BooleanField(required=False, default=False)
     service = None
 
 

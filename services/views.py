@@ -2,12 +2,13 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db.models import Prefetch
 
 from django.core.exceptions import ValidationError
 
 from accounts.permissions import IsAdmin
-from .models import Service
-from .serializers import ServiceSerializer
+from .models import Service, ServiceScopeOption
+from .serializers import ServiceScopeQuestionSerializer, ServiceSerializer
 from .services import create_service,  update_service
 
 
@@ -147,5 +148,31 @@ class ServiceDetailAPIView(APIView):
 
         return Response(
             ServiceSerializer(updated_service).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ServiceScopeAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            service = Service.objects.get(pk=pk, is_active=True)
+        except Service.DoesNotExist:
+            return Response(
+                {"detail": "Service not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        questions = service.scope_questions.filter(
+            is_active=True,
+        ).prefetch_related(
+            Prefetch(
+                "options",
+                queryset=ServiceScopeOption.objects.filter(is_active=True),
+            )
+        )
+        return Response(
+            ServiceScopeQuestionSerializer(questions, many=True).data,
             status=status.HTTP_200_OK,
         )

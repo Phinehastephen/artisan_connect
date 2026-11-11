@@ -4,6 +4,26 @@
   padding: clamp(2.5rem, 6vw, 5rem) clamp(1rem, 4vw, 2rem);
 }
 
+.booking-on-way-note {
+  background: #e7f2ec;
+  border-radius: 6px;
+  color: var(--green-dark);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 0.9rem 0 0;
+  padding: 0.75rem 0.9rem;
+}
+
+.booking-repeat-scope {
+  margin: 0.8rem 0 1rem;
+}
+
+.booking-repeat-row {
+  border-top: 1px solid var(--line);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
 .customer-workspace-nav {
   border-bottom: 1px solid var(--line);
   display: flex;
@@ -35,6 +55,44 @@
 .customer-locations {
   min-height: 420px;
   padding: 1rem 0;
+}
+
+.service-scope-form {
+  background: #f3f7f3;
+  border: 1px solid #e1ebe1;
+  border-radius: 9px;
+  margin: 1.25rem 0;
+  padding: clamp(1rem, 3vw, 1.4rem);
+}
+
+.service-scope-form h3 {
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.service-scope-form .field-note {
+  line-height: 1.5;
+  margin: 0.5rem 0 1rem;
+}
+
+.service-scope-grid {
+  display: grid;
+  gap: 0.85rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 1rem;
+}
+
+.service-scope-grid .form-label {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.service-scope-grid .form-select {
+  margin-top: 0.35rem;
+  min-height: 44px;
 }
 
 .customer-profile {
@@ -274,6 +332,11 @@
   color: #285589;
 }
 
+.status-on_the_way {
+  background: #e7f2ec;
+  color: var(--green-dark);
+}
+
 .status-completed {
   background: #e9f2eb;
   color: var(--green-dark);
@@ -313,6 +376,25 @@
   color: var(--ink);
   font-size: 0.82rem;
   margin: 0;
+}
+
+.booking-scope-detail,
+.artisan-job-scope {
+  grid-column: 1 / -1;
+}
+
+.booking-scope-detail dd,
+.artisan-job-scope dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.booking-scope-detail dd span,
+.artisan-job-scope dd span {
+  background: #f0f4f0;
+  border-radius: 5px;
+  padding: 0.3rem 0.45rem;
   overflow-wrap: anywhere;
 }
 
@@ -758,6 +840,28 @@
 .booking-dialog-summary {
   color: var(--muted);
   margin: 0.45rem 0 1.25rem;
+}
+
+.booking-scope-summary {
+  background: #f3f7f3;
+  border-radius: 7px;
+  display: grid;
+  gap: 0.6rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 0 0 1rem;
+  padding: 0.8rem;
+}
+
+.booking-scope-summary dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  margin-bottom: 0.2rem;
+}
+
+.booking-scope-summary dd {
+  color: var(--ink);
+  font-size: 0.8rem;
+  margin: 0;
 }
 
 .booking-working-note {

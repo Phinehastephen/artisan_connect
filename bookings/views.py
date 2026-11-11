@@ -13,6 +13,7 @@ from .serializers import BookingCreateSerializer, BookingSerializer
 from .services import (
     create_booking,
     accept_booking,
+    mark_booking_on_the_way,
     start_booking,
     complete_booking,
     confirm_completion,
@@ -43,7 +44,11 @@ class BookingListAPIView(APIView):
         else:
             bookings = Booking.objects.filter(customer__user=user)
 
-        bookings = bookings.select_related("review").order_by("-created_at")
+        bookings = bookings.select_related(
+            "review",
+            "scope",
+            "journey",
+        ).order_by("-created_at")
         serializer = BookingSerializer(
             bookings, many=True, context={"request": request}
         )
@@ -85,6 +90,7 @@ class BookCreateAPIView(APIView):
                 job_address=location["job_address"],
                 job_latitude=location["job_latitude"],
                 job_longitude=location["job_longitude"],
+                scope_answers=data.get("_scope_snapshot"),
             )
 
         except SavedLocation.DoesNotExist:
@@ -118,7 +124,7 @@ class BookingDetailView(APIView):
 
     def get(self, request, pk, *args, **kwargs):
         try:
-            booking = Booking.objects.get(pk=pk)
+            booking = Booking.objects.select_related("scope", "journey").get(pk=pk)
         except Booking.DoesNotExist:
             return Response(
                 {"error": "Booking not found."},
@@ -147,7 +153,9 @@ class BookingDetailView(APIView):
 class BookingStatusActionView(APIView):
     permission_classes = [IsAuthenticated]
 
-    ARTISAN_ACTIONS = {"accept", "start", "complete", "reject"}
+    ARTISAN_ACTIONS = {
+        "accept", "on-the-way", "start", "complete", "reject",
+    }
     CUSTOMER_ACTIONS = {"cancel", "confirm", "disagree"}
     # Normally a booking finalizes when the customer confirms (or after 3
     # days); admins settle disputes by finalizing or reopening the job.
@@ -155,7 +163,7 @@ class BookingStatusActionView(APIView):
 
     def post(self, request, pk, action):
         try:
-            booking = Booking.objects.get(pk=pk)
+            booking = Booking.objects.select_related("scope", "journey").get(pk=pk)
         except Booking.DoesNotExist:
             return Response(
                 {"error": "Booking not found."},
@@ -164,6 +172,7 @@ class BookingStatusActionView(APIView):
 
         action_map = {
             "accept": accept_booking,
+            "on-the-way": mark_booking_on_the_way,
             "start": start_booking,
             "complete": complete_booking,
             "confirm": confirm_completion,

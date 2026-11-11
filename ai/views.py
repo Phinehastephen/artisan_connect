@@ -58,14 +58,24 @@ class SmartSearchView(APIView):
         except ValidationError as e:
             return Response({"error": e.messages}, status=status.HTTP_400_BAD_REQUEST)
 
-        log_search(request.user.customer_profile, data["q"], result)
-
         response = {
             "query": data["q"],
             "confidence": result.confidence.lower(),
         }
 
         if result.confidence == SearchLog.Confidence.CONFIDENT:
+            if data["resolve_only"]:
+                response.update({
+                    "message": f"Choose the details for {result.service.name} before searching.",
+                    "service": ServiceBriefSerializer(result.service).data,
+                    "origin": {
+                        "latitude": float(latitude),
+                        "longitude": float(longitude),
+                    },
+                })
+                return Response(response, status=status.HTTP_200_OK)
+
+            log_search(request.user.customer_profile, data["q"], result)
             ranked = rank_artisans(
                 latitude=latitude,
                 longitude=longitude,
@@ -85,11 +95,13 @@ class SmartSearchView(APIView):
                 ).data,
             })
         elif result.confidence == SearchLog.Confidence.UNSURE:
+            log_search(request.user.customer_profile, data["q"], result)
             response.update({
                 "message": UNSURE_MESSAGE,
                 "suggestions": ServiceBriefSerializer(result.suggestions, many=True).data,
             })
         else:
+            log_search(request.user.customer_profile, data["q"], result)
             response.update({
                 "message": CLARIFY_MESSAGE,
                 "services": ServiceBriefSerializer(

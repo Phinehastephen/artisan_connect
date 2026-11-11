@@ -109,3 +109,28 @@ class Booking(models.Model):
 
     def __str__(self):
         return f"Booking #{self.id}"
+
+
+class BookingScope(models.Model):
+    booking = models.OneToOneField(
+        Booking,
+        on_delete=models.CASCADE,
+        related_name="scope",
+    )
+    answers = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Scope for booking #{self.booking_id}"
+
+
+class BookingJourney(models.Model):
+    booking = models.OneToOneField(
+        Booking,
+        on_delete=models.CASCADE,
+        related_name="journey",
+    )
+    on_the_way_at = models.DateTimeField()
+
+    def __str__(self):
+        return f"Artisan on the way for booking #{self.booking_id}"

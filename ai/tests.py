@@ -199,6 +199,27 @@ class SmartSearchRankingTests(TestCase):
         self.first_artisan = self.create_artisan("ranked_first")
         self.second_artisan = self.create_artisan("ranked_second")
 
+    @patch("ai.views.rank_artisans")
+    def test_resolve_only_search_does_not_rank_or_log_yet(self, mock_rank):
+        response = self.client.get(
+            "/api/v1/ai/search",
+            {
+                "q": "plumbing",
+                "latitude": "6.5244",
+                "longitude": "3.3792",
+                "resolve_only": "true",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["confidence"], "confident")
+        self.assertEqual(response.data["service"]["id"], self.plumbing.id)
+        self.assertNotIn("results", response.data)
+        mock_rank.assert_not_called()
+        self.assertFalse(
+            SearchLog.objects.filter(customer=self.customer).exists()
+        )
+
     def create_artisan(self, username):
         user = User.objects.create_user(
             username=username,

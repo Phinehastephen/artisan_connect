@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { apiRequest } from '../api/client'
 
-const cancellableStatuses = ['PENDING', 'ACCEPTED']
+function canCancelBooking(booking) {
+  const workflowStatus = booking.workflow_status || booking.status
+  return booking.status === 'PENDING'
+    || (booking.status === 'ACCEPTED' && workflowStatus === 'ACCEPTED')
+}
 
 function formatDate(value) {
   if (!value) return '—'
@@ -17,7 +21,7 @@ function artisanName(booking) {
     || 'Artisan'
 }
 
-export default function CustomerBookings() {
+export default function CustomerBookings({ onRepeatBooking }) {
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [submittingId, setSubmittingId] = useState(null)
@@ -27,6 +31,7 @@ export default function CustomerBookings() {
   const [disputeReason, setDisputeReason] = useState('')
   const [reviewDrafts, setReviewDrafts] = useState({})
   const [reviewSubmittingId, setReviewSubmittingId] = useState(null)
+  const [repeatSubmittingId, setRepeatSubmittingId] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -114,6 +119,19 @@ export default function CustomerBookings() {
     }
   }
 
+  async function repeatBooking(booking) {
+    setError('')
+    setNotice('')
+    setRepeatSubmittingId(booking.id)
+    try {
+      await onRepeatBooking(booking)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setRepeatSubmittingId(null)
+    }
+  }
+
   return (
     <section aria-labelledby="bookings-title" className="customer-bookings">
       <div className="results-heading">
@@ -155,6 +173,7 @@ export default function CustomerBookings() {
           {bookings.map((booking) => {
             const isSubmitting = submittingId === booking.id
             const serviceName = booking.service_detail?.name || 'Service'
+            const workflowStatus = booking.workflow_status || booking.status
 
             return (
               <article className="booking-card" key={booking.id}>
@@ -164,8 +183,8 @@ export default function CustomerBookings() {
                     <h3>{serviceName}</h3>
                     <p className="booking-artisan">with {artisanName(booking)}</p>
                   </div>
-                  <span className={`booking-status status-${booking.status.toLowerCase()}`}>
-                    {booking.status.replaceAll('_', ' ')}
+                  <span className={`booking-status status-${workflowStatus.toLowerCase()}`}>
+                    {workflowStatus === 'ON_THE_WAY' ? 'On my way' : workflowStatus.replaceAll('_', ' ')}
                   </span>
                 </div>
 
@@ -186,6 +205,22 @@ export default function CustomerBookings() {
                       <dd>{booking.finalization_method.replaceAll('_', ' ')}</dd>
                     </div>
                   )}
+                  {booking.artisan_on_the_way_at && (
+                    <div>
+                      <dt>Artisan on the way</dt>
+                      <dd>{formatDate(booking.artisan_on_the_way_at)}</dd>
+                    </div>
+                  )}
+                  {booking.scope_answers?.length > 0 && (
+                    <div className="booking-scope-detail">
+                      <dt>Job details</dt>
+                      <dd>
+                        {booking.scope_answers.map((answer) => (
+                          <span key={answer.key}>{answer.question}: {answer.answer}</span>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
                   {booking.status === 'DISPUTED' && (
                     <div className="booking-dispute-detail">
                       <dt>Dispute submitted</dt>
@@ -193,6 +228,12 @@ export default function CustomerBookings() {
                     </div>
                   )}
                 </dl>
+
+                {workflowStatus === 'ON_THE_WAY' && (
+                  <p className="booking-on-way-note">
+                    The artisan has marked themselves as on the way. This booking can no longer be cancelled.
+                  </p>
+                )}
 
                 {booking.status === 'COMPLETED' && (
                   <div className="booking-confirm-panel">
@@ -255,6 +296,19 @@ export default function CustomerBookings() {
                   </p>
                 )}
 
+                {booking.status === 'FINALIZED' && (
+                  <div className="booking-actions booking-repeat-row">
+                    <button
+                      className="btn btn-outline-dark"
+                      disabled={repeatSubmittingId === booking.id}
+                      onClick={() => repeatBooking(booking)}
+                      type="button"
+                    >
+                      {repeatSubmittingId === booking.id ? 'Preparing request…' : 'Book this artisan again'}
+                    </button>
+                  </div>
+                )}
+
                 {booking.status === 'FINALIZED' && !booking.has_review && (
                   <form className="booking-review-form" onSubmit={(event) => submitReview(event, booking)}>
                     <h4>How was the service?</h4>
@@ -308,7 +362,7 @@ export default function CustomerBookings() {
                   </form>
                 )}
 
-                {cancellableStatuses.includes(booking.status) && (
+                {canCancelBooking(booking) && (
                   <div className="booking-actions booking-cancel-row">
                     <button
                       className="btn btn-outline-danger"

@@ -186,19 +186,24 @@ The system is organized around the following modules:
 
 - `services_service`
 - `services_servicekeyword` — alternative words customers use for each service (Smart Search)
+- `services_servicescopequestion` / `services_servicescopeoption` — structured, admin-manageable job details shown before artisan discovery
 - `artisans_artisan_services` — which services each artisan offers
 
-Service categories are postponed.
+The first scope-question set covers Hair Stylist, Cake Making, Makeup artist (MUA), Plumbing, and Auto Repair. Scope answers describe the requested work only; no job-specific price is calculated.
 
 ### Booking, Review & Location Tables
 
 - `bookings_booking`
+- `bookings_bookingscope` — immutable-at-booking snapshot of selected scope answers
+- `bookings_bookingjourney` — artisan's one-time “On my way” marker, kept separate from frozen booking status
 - `ai_searchlog` — Smart Search history (kept 12 months)
 - `reviews_review`
 - `locations_savedlocation`
 - `notifications_notification` — recipient-scoped in-app notifications and read state
 
 Additional modules are introduced according to their dependencies and approved development stage.
+
+`GET /api/v1/services/<id>/scope` returns active scope questions and options for an active service. The customer selects all required options before Smart Search returns artisans. Booking creation validates the selected option IDs and stores the human-readable answer snapshot separately from `Booking`.
 
 ### Notifications
 
@@ -453,10 +458,16 @@ Reviews are tied to completed work rather than being freely submitted against an
 ### Booking Lifecycle
 
 ```text
-PENDING ──artisan accepts──▶ ACCEPTED ──artisan starts──▶ IN_PROGRESS
-   │                            │                              │
-   ├─artisan rejects─┐          │                    artisan marks complete
-   └─customer cancels┴──────────┴─▶ CANCELLED                  ▼
+PENDING ──artisan accepts──▶ ACCEPTED ──artisan marks on the way──▶ ACCEPTED
+   │                            │                                      │
+   ├─artisan rejects─┐          ├─customer cancels (before on the way) │
+   └─────────────────┴──────────┴─▶ CANCELLED                          │
+                                                                        │ artisan starts
+                                                                        ▼
+                                                                  IN_PROGRESS
+                                                                        │
+                                                              artisan marks complete
+                                                                        ▼
                                                            COMPLETED
                                                                │
                                    customer confirms ──────────┼──▶ FINALIZED
@@ -470,7 +481,10 @@ PENDING ──artisan accepts──▶ ACCEPTED ──artisan starts──▶ IN
                                                                    marks it complete again)
 ```
 
-- A customer can cancel a booking while it is **pending or accepted**, but not once work has started.
+- Before ranked artisan results are shown for the pilot services, customers answer the service's structured scope questions. The selected answers are saved as a readable snapshot on the booking. Scope details help artisans understand the request; they do not calculate or promise a price.
+- After accepting, the artisan marks **“On my way”** before starting the job. The customer can cancel while a booking is pending or accepted, but not after the artisan marks themselves on the way. This phase does not charge a cancellation fee.
+- Journey tracking is recorded in `BookingJourney`; it does not add a new status or timestamp column to the frozen `Booking` model. API clients receive a derived `workflow_status` of `ON_THE_WAY` while the underlying booking remains `ACCEPTED`.
+- Labour price estimation and materials quotes are deferred. Service price ranges are references only; the booking flow does not calculate a job-specific total or collect a materials proposal.
 - **Both parties must agree a job is finished.** The artisan marking the job complete counts as their confirmation; the customer is then asked to confirm on their side. This protects artisans from customers who forget to confirm, and gives the app a record that both sides agreed.
 - A customer who hasn't confirmed receives **email reminders** 24 hours, 48 hours, and 66 hours after completion (the last one is marked as the final reminder). If they still haven't confirmed **3 days** after completion, the booking is finalized automatically.
 - **The customer can disagree** that the job is done if they aren't satisfied, but must give a reason of **at least 20 characters**. The booking becomes **DISPUTED**: reminders and auto-finalization stop, and an admin decides. The reason is visible to the customer, the artisan, and admins only — never in public reviews.
@@ -704,7 +718,7 @@ The first release focuses on the core platform:
 - Authentication
 - Customer and artisan management
 - Service management
-- Booking
+- Booking, including an explicit repeat-request flow from a finalized booking (the customer reviews the details, chooses a location, and submits a new request)
 - Reviews
 - Notifications
 - Smart search
@@ -724,7 +738,6 @@ Planned enhancements include:
 - Custom admin dashboard
 - Additional analytics
 - Live text chat as a future token-gated feature; define access limits, expiry, privacy, and moderation before implementation
-- Easy repeat booking: customers can rebook an artisan they've hired before without restarting discovery
 - Explore group/team artisan accounts for coordinated services (for example event planners and party teams); requires a separate authorization, booking ownership, and service design before implementation
 
 

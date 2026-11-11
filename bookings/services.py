@@ -10,7 +10,7 @@ from accounts.services import run_in_background
 from notifications.models import Notification
 from notifications.services import create_notification, notify_admins
 
-from .models import Booking
+from .models import Booking, BookingJourney, BookingScope
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,12 @@ def start_booking(booking):
     if booking.status != Booking.Status.ACCEPTED:
         raise ValidationError("Only accepted bookings can be started.")
 
+    journey = BookingJourney.objects.filter(booking=booking).first()
+    if journey is None:
+        raise ValidationError(
+            "Mark yourself on the way before starting the job."
+        )
+
     booking.status = Booking.Status.IN_PROGRESS
     booking.save(update_fields=["status"])
     _notify_booking_user(
@@ -94,6 +100,34 @@ def start_booking(booking):
         notification_type=Notification.Type.BOOKING_STARTED,
         title="Work started",
         message=f"Work has started on booking #{booking.pk}.",
+    )
+    return booking
+
+
+@transaction.atomic
+def mark_booking_on_the_way(booking):
+    _lock(booking)
+
+    if booking.status != Booking.Status.ACCEPTED:
+        raise ValidationError(
+            "Only accepted bookings can be marked as on the way."
+        )
+
+    if BookingJourney.objects.filter(booking=booking).exists():
+        raise ValidationError(
+            "You have already marked yourself as on the way."
+        )
+
+    BookingJourney.objects.create(
+        booking=booking,
+        on_the_way_at=timezone.now(),
+    )
+    _notify_booking_user(
+        booking=booking,
+        recipient=booking.customer.user if booking.customer_id else None,
+        notification_type=Notification.Type.BOOKING_ON_THE_WAY,
+        title="Your artisan is on the way",
+        message=f"The artisan for booking #{booking.pk} is on the way.",
     )
     return booking
 
@@ -161,6 +195,11 @@ def cancel_booking(booking):
     if booking.status not in (Booking.Status.PENDING, Booking.Status.ACCEPTED):
         raise ValidationError(
             "Only pending or accepted bookings can be cancelled."
+        )
+
+    if BookingJourney.objects.filter(booking=booking).exists():
+        raise ValidationError(
+            "This booking can no longer be cancelled because the artisan is on the way."
         )
 
     booking.status = Booking.Status.CANCELLED
@@ -464,6 +503,7 @@ def create_booking(
     job_address,
     job_latitude,
     job_longitude,
+    scope_answers=None,
 ):
     if artisan.verification_status != "VERIFIED":
         raise ValidationError(
@@ -489,6 +529,11 @@ def create_booking(
         job_longitude=job_longitude,
         status=Booking.Status.PENDING,
     )
+    if scope_answers:
+        BookingScope.objects.create(
+            booking=booking,
+            answers=scope_answers,
+        )
 
     _notify_booking_user(
         booking=booking,

@@ -1,6 +1,25 @@
 from rest_framework import serializers
 
-from .models import Service
+from .models import Service, ServiceScopeOption, ServiceScopeQuestion
+
+
+class ServiceScopeOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ServiceScopeOption
+        fields = ["id", "value", "label"]
+        read_only_fields = fields
+
+
+class ServiceScopeQuestionSerializer(serializers.ModelSerializer):
+    options = ServiceScopeOptionSerializer(
+        many=True,
+        read_only=True,
+    )
+
+    class Meta:
+        model = ServiceScopeQuestion
+        fields = ["id", "key", "label", "options"]
+        read_only_fields = fields
 
 
 class ServiceSerializer(serializers.ModelSerializer):

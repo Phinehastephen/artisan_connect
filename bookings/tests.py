@@ -5,16 +5,20 @@ from unittest.mock import patch
 
 from django.core import mail
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from accounts.models import User
 from artisans.models import Artisan
 from customers.models import Customer
 from services.models import Service
+from services.models import ServiceScopeOption, ServiceScopeQuestion
 
 from .models import Booking
+from .serializers import BookingCreateSerializer
 from .services import (
     create_booking,
     accept_booking,
+    mark_booking_on_the_way,
     start_booking,
     complete_booking,
     finalize_booking,
@@ -152,6 +156,7 @@ class BookingBusinessLogicTests(TestCase):
             booking.accepted_at,
         )
 
+        mark_booking_on_the_way(booking)
         booking = start_booking(booking)
 
         self.assertEqual(
@@ -309,10 +314,75 @@ class BookingBusinessLogicTests(TestCase):
             job_longitude=3.379200,
         )
         accept_booking(booking)
+        mark_booking_on_the_way(booking)
         start_booking(booking)
 
         with self.assertRaises(ValidationError):
             cancel_booking(booking)
+
+    def test_artisan_must_mark_on_the_way_before_starting(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+        accept_booking(booking)
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            "Mark yourself on the way before starting the job.",
+        ):
+            start_booking(booking)
+
+    def test_customer_cannot_cancel_after_artisan_marks_on_the_way(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+        accept_booking(booking)
+        mark_booking_on_the_way(booking)
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            "This booking can no longer be cancelled because the artisan is on the way.",
+        ):
+            cancel_booking(booking)
+
+    def test_on_the_way_action_updates_customer_visible_workflow(self):
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+        accept_booking(booking)
+        self.artisan.user.role = User.Role.ARTISAN
+        self.artisan.user.save(update_fields=["role"])
+        client = APIClient()
+        client.force_authenticate(user=self.artisan.user)
+
+        response = client.post(
+            f"/api/v1/bookings/status/{booking.id}/on-the-way"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["workflow_status"], "ON_THE_WAY")
+        self.assertIsNotNone(response.data["artisan_on_the_way_at"])
+
+        client.force_authenticate(user=self.user)
+        cancel_response = client.post(
+            f"/api/v1/bookings/status/{booking.id}/cancel"
+        )
+        self.assertEqual(cancel_response.status_code, 400)
 
     def test_inactive_service_cannot_be_booked(self):
         self.service.is_active = False
@@ -327,6 +397,59 @@ class BookingBusinessLogicTests(TestCase):
                 job_latitude=6.524400,
                 job_longitude=3.379200,
             )
+
+    def test_booking_scope_requires_and_snapshots_valid_answers(self):
+        question = ServiceScopeQuestion.objects.create(
+            service=self.service,
+            key="task",
+            label="Task",
+            position=0,
+        )
+        option = ServiceScopeOption.objects.create(
+            question=question,
+            value="leak_repair",
+            label="Leak repair",
+            position=0,
+        )
+        data = {
+            "artisan": self.artisan.id,
+            "service": self.service.id,
+            "job_location_type": "current",
+            "job_latitude": "6.524400",
+            "job_longitude": "3.379200",
+            "scope_answers": [
+                {"question": question.id, "option": option.id},
+            ],
+        }
+
+        serializer = BookingCreateSerializer(data=data)
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(
+            serializer.validated_data["_scope_snapshot"],
+            [{
+                "key": "task",
+                "question": "Task",
+                "value": "leak_repair",
+                "answer": "Leak repair",
+            }],
+        )
+        booking = create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Test Address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+            scope_answers=serializer.validated_data["_scope_snapshot"],
+        )
+        self.assertEqual(booking.scope.answers[0]["answer"], "Leak repair")
+
+        missing_answer = BookingCreateSerializer(
+            data={**data, "scope_answers": []},
+        )
+        self.assertFalse(missing_answer.is_valid())
+        self.assertIn("scope_answers", missing_answer.errors)
 
 
 class BookingPrivacyTests(TestCase):
@@ -403,6 +526,7 @@ class BookingPrivacyTests(TestCase):
 
     def test_artisan_sees_job_location_once_accepted_and_in_progress(self):
         accept_booking(self.booking)
+        mark_booking_on_the_way(self.booking)
         self.assertEqual(
             self._serialize_for(self.artisan_user)["job_address"],
             "12 Test Street, Lagos",
@@ -416,6 +540,7 @@ class BookingPrivacyTests(TestCase):
 
     def test_artisan_cannot_see_job_location_after_completion(self):
         accept_booking(self.booking)
+        mark_booking_on_the_way(self.booking)
         start_booking(self.booking)
         complete_booking(self.booking)
 
@@ -513,6 +638,7 @@ class CompletionConfirmationTests(TestCase):
             job_longitude=3.379200,
         )
         accept_booking(self.booking)
+        mark_booking_on_the_way(self.booking)
         start_booking(self.booking)
         complete_booking(self.booking)
 

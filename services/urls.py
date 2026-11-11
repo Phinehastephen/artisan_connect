@@ -1,10 +1,11 @@
 from django.urls import path
 
-from .views import ServiceListCreateAPIView, ServiceDetailAPIView
+from .views import ServiceListCreateAPIView, ServiceDetailAPIView, ServiceScopeAPIView
 
 
 urlpatterns = [
     path("service", ServiceListCreateAPIView.as_view(), name="service-list"),
+    path("<int:pk>/scope", ServiceScopeAPIView.as_view(), name="service-scope"),
     path("<int:pk>", ServiceDetailAPIView.as_view(), name="service-detail"),
 ]
 

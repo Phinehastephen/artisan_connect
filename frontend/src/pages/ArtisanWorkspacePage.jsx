@@ -7,7 +7,8 @@ const actionsByStatus = {
     { action: 'accept', label: 'Accept request', style: 'primary' },
     { action: 'reject', label: 'Decline', style: 'outline-danger' },
   ],
-  ACCEPTED: [{ action: 'start', label: 'Start job', style: 'primary' }],
+  ACCEPTED: [{ action: 'on-the-way', label: 'Mark on my way', style: 'primary' }],
+  ON_THE_WAY: [{ action: 'start', label: 'Start job', style: 'primary' }],
   IN_PROGRESS: [{ action: 'complete', label: 'Mark complete', style: 'success' }],
 }
 
@@ -194,6 +195,7 @@ function ServiceChangeRequestForm({
 }) {
   const currentIds = (profile.services || []).map((service) => String(service.id))
   const [selectedServices, setSelectedServices] = useState(currentIds)
+  const [serviceSearch, setServiceSearch] = useState('')
   const [reason, setReason] = useState('')
   const [evidence, setEvidence] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -209,6 +211,15 @@ function ServiceChangeRequestForm({
   const removedCurrentCount = currentIds.length - retainedCurrentCount
   const canRequestChange = profile.verification_status === 'VERIFIED'
     && !pendingRequest
+  const filteredServices = availableServices
+    .filter((service) => service.name.toLowerCase().includes(serviceSearch.trim().toLowerCase()))
+    .sort((left, right) => left.name.localeCompare(right.name))
+  const serviceGroups = filteredServices.reduce((groups, service) => {
+    const firstLetter = service.name.trim().charAt(0).toUpperCase()
+    const heading = /[A-Z]/.test(firstLetter) ? firstLetter : '#'
+    groups[heading] = [...(groups[heading] || []), service]
+    return groups
+  }, {})
 
   function updateEvidence(category, files) {
     setEvidence((current) => ({ ...current, [category]: Array.from(files) }))
@@ -280,29 +291,67 @@ function ServiceChangeRequestForm({
       {notice && <div className="alert alert-success" role="status">{notice}</div>}
       {error && <div className="alert alert-danger" role="alert">{error}</div>}
       <form onSubmit={submitChangeRequest}>
-        <fieldset className="artisan-service-options">
-          <legend>Proposed services (select up to three)</legend>
-          {availableServices.map((service) => {
-            const serviceId = String(service.id)
-            return (
-              <label key={service.id}>
-                <input
-                  checked={selectedServices.includes(serviceId)}
-                  disabled={!canRequestChange || submitting}
-                  onChange={(event) => {
-                    setSelectedServices((current) => (
-                      event.target.checked
-                        ? [...current, serviceId]
-                        : current.filter((id) => id !== serviceId)
-                    ))
-                  }}
-                  type="checkbox"
-                />
-                <span>{service.name}</span>
-              </label>
-            )
-          })}
-        </fieldset>
+        <div className="artisan-service-picker-heading">
+          <label className="form-label" htmlFor="artisan-service-search">
+            Find a service
+            <input
+              autoComplete="off"
+              className="form-control"
+              disabled={!canRequestChange || submitting}
+              id="artisan-service-search"
+              onChange={(event) => setServiceSearch(event.target.value)}
+              placeholder="Search services by name"
+              type="search"
+              value={serviceSearch}
+            />
+          </label>
+          <span className="artisan-service-selection-count">
+            {selectedServices.length} of 3 selected
+          </span>
+        </div>
+        <p className="field-note">
+          Select up to three. Services are listed alphabetically; search to narrow the list.
+        </p>
+        {Object.keys(serviceGroups).length ? (
+          <div className="artisan-service-groups">
+            {Object.entries(serviceGroups).map(([heading, groupServices]) => (
+              <fieldset className="artisan-service-group" key={heading}>
+                <legend>{heading}</legend>
+                <div className="artisan-service-options">
+                  {groupServices.map((service) => {
+                    const serviceId = String(service.id)
+                    const selected = selectedServices.includes(serviceId)
+                    return (
+                      <label className={selected ? 'selected' : ''} key={service.id}>
+                        <input
+                          checked={selected}
+                          disabled={
+                            !canRequestChange
+                            || submitting
+                            || (!selected && selectedServices.length >= 3)
+                          }
+                          onChange={(event) => {
+                            setSelectedServices((current) => (
+                              event.target.checked
+                                ? [...current, serviceId]
+                                : current.filter((id) => id !== serviceId)
+                            ))
+                          }}
+                          type="checkbox"
+                        />
+                        <span>{service.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </fieldset>
+            ))}
+          </div>
+        ) : (
+          <p className="artisan-service-empty">
+            {serviceSearch ? 'No services match your search.' : 'No active services are available.'}
+          </p>
+        )}
         <p className="field-note">Your current services: {(profile.services || []).map((service) => service.name).join(', ') || 'None'}.</p>
         <label className="form-label" htmlFor="artisan-service-change-reason">
           Reason for the change
@@ -454,7 +503,12 @@ export default function ArtisanWorkspacePage() {
       setBookings((current) => current.map((item) => (
         item.id === booking.id ? updatedBooking : item
       )))
-      setNotice(`Booking #${booking.id} ${action === 'reject' ? 'declined' : `${action}ed`}.`)
+      const actionLabel = action === 'reject'
+        ? 'declined'
+        : action === 'on-the-way'
+          ? 'marked as on the way'
+          : `${action}ed`
+      setNotice(`Booking #${booking.id} ${actionLabel}.`)
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -552,7 +606,8 @@ export default function ArtisanWorkspacePage() {
               ) : (
                 <div className="artisan-job-list">
                   {bookings.map((booking) => {
-                    const actions = actionsByStatus[booking.status] || []
+                    const workflowStatus = booking.workflow_status || booking.status
+                    const actions = actionsByStatus[workflowStatus] || []
                     const isSubmitting = actionId === booking.id
                     return (
                       <article className="artisan-job-card" key={booking.id}>
@@ -562,8 +617,8 @@ export default function ArtisanWorkspacePage() {
                             <h3>{booking.service_detail?.name || 'Service request'}</h3>
                             <p className="booking-artisan">Requested by {customerName(booking)}</p>
                           </div>
-                          <span className={`booking-status status-${booking.status.toLowerCase()}`}>
-                            {booking.status.replaceAll('_', ' ')}
+                          <span className={`booking-status status-${workflowStatus.toLowerCase()}`}>
+                            {workflowStatus === 'ON_THE_WAY' ? 'On my way' : workflowStatus.replaceAll('_', ' ')}
                           </span>
                         </div>
                         <dl className="booking-details">
@@ -581,6 +636,22 @@ export default function ArtisanWorkspacePage() {
                             <div>
                               <dt>Marked complete</dt>
                               <dd>{formatDate(booking.completed_at)}</dd>
+                            </div>
+                          )}
+                          {booking.artisan_on_the_way_at && (
+                            <div>
+                              <dt>Artisan on the way</dt>
+                              <dd>{formatDate(booking.artisan_on_the_way_at)}</dd>
+                            </div>
+                          )}
+                          {booking.scope_answers?.length > 0 && (
+                            <div className="artisan-job-scope">
+                              <dt>Requested job details</dt>
+                              <dd>
+                                {booking.scope_answers.map((answer) => (
+                                  <span key={answer.key}>{answer.question}: {answer.answer}</span>
+                                ))}
+                              </dd>
                             </div>
                           )}
                         </dl>

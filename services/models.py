@@ -82,3 +82,51 @@ class ServiceKeyword(models.Model):
 
     def __str__(self):
         return f"{self.keyword} -> {self.service.name}"
+
+
+class ServiceScopeQuestion(models.Model):
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.CASCADE,
+        related_name="scope_questions",
+    )
+    key = models.SlugField(max_length=100)
+    label = models.CharField(max_length=150)
+    position = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["service", "key"],
+                name="unique_scope_question_key_per_service",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.service.name}: {self.label}"
+
+
+class ServiceScopeOption(models.Model):
+    question = models.ForeignKey(
+        ServiceScopeQuestion,
+        on_delete=models.CASCADE,
+        related_name="options",
+    )
+    value = models.SlugField(max_length=100)
+    label = models.CharField(max_length=150)
+    position = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["question", "value"],
+                name="unique_scope_option_value_per_question",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.question.label}: {self.label}"

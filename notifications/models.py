@@ -8,6 +8,7 @@ class Notification(models.Model):
         BOOKING_ACCEPTED = "BOOKING_ACCEPTED", "Booking accepted"
         BOOKING_REJECTED = "BOOKING_REJECTED", "Booking rejected"
         BOOKING_CANCELLED = "BOOKING_CANCELLED", "Booking cancelled"
+        BOOKING_ON_THE_WAY = "BOOKING_ON_THE_WAY", "Artisan on the way"
         BOOKING_STARTED = "BOOKING_STARTED", "Work started"
         BOOKING_COMPLETED = "BOOKING_COMPLETED", "Work completed"
         BOOKING_CONFIRMATION_REMINDER = "BOOKING_CONFIRMATION_REMINDER", "Completion reminder"

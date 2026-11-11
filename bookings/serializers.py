@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.core.exceptions import ObjectDoesNotExist
 from .models import Booking
+from services.models import ServiceScopeQuestion
 from artisans.models import Artisan
 from services.models import Service
 from locations.serializers import CoordinateField
@@ -18,6 +19,9 @@ class BookingSerializer(serializers.ModelSerializer):
 
     awaiting_customer_confirmation = serializers.SerializerMethodField()
     has_review = serializers.SerializerMethodField()
+    scope_answers = serializers.SerializerMethodField()
+    workflow_status = serializers.SerializerMethodField()
+    artisan_on_the_way_at = serializers.SerializerMethodField()
 
     JOB_LOCATION_FIELDS = ("job_address", "job_latitude", "job_longitude")
 
@@ -40,6 +44,7 @@ class BookingSerializer(serializers.ModelSerializer):
             "job_latitude",
             "job_longitude",
             "status",
+            "workflow_status",
             "created_at",
             "updated_at",
             "accepted_at",
@@ -50,6 +55,8 @@ class BookingSerializer(serializers.ModelSerializer):
             "has_review",
             "dispute_reason",
             "disputed_at",
+            "scope_answers",
+            "artisan_on_the_way_at",
         ]
 
         read_only_fields = fields
@@ -91,6 +98,23 @@ class BookingSerializer(serializers.ModelSerializer):
         except ObjectDoesNotExist:
             return False
         return True
+
+    def get_scope_answers(self, booking):
+        try:
+            return booking.scope.answers
+        except ObjectDoesNotExist:
+            return []
+
+    def get_workflow_status(self, booking):
+        if booking.status == Booking.Status.ACCEPTED and self.get_artisan_on_the_way_at(booking):
+            return "ON_THE_WAY"
+        return booking.status
+
+    def get_artisan_on_the_way_at(self, booking):
+        try:
+            return booking.journey.on_the_way_at
+        except ObjectDoesNotExist:
+            return None
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):
@@ -135,6 +159,12 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         max_value=180,
     )
 
+    scope_answers = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        write_only=True,
+    )
+
     class Meta:
         model = Booking
         fields = [
@@ -145,7 +175,85 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             "job_address",
             "job_latitude",
             "job_longitude",
+            "scope_answers",
         ]
+
+    def validate_scope_answers(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Provide scope answers as a list.")
+        return value
+
+    def _validate_scope_answers(self, attrs):
+        service = attrs["service"]
+        questions = list(
+            ServiceScopeQuestion.objects.filter(
+                service=service,
+                is_active=True,
+            ).prefetch_related("options")
+        )
+        supplied_answers = attrs.get("scope_answers", [])
+
+        if not questions:
+            if supplied_answers:
+                raise serializers.ValidationError({
+                    "scope_answers": "This service does not require scope answers."
+                })
+            attrs["_scope_snapshot"] = []
+            return
+
+        answers_by_question = {}
+        for answer in supplied_answers:
+            if not isinstance(answer, dict):
+                raise serializers.ValidationError({
+                    "scope_answers": "Each answer must include question and option IDs."
+                })
+            question_id = answer.get("question")
+            option_id = answer.get("option")
+            if (
+                not isinstance(question_id, int)
+                or isinstance(question_id, bool)
+                or not isinstance(option_id, int)
+                or isinstance(option_id, bool)
+            ):
+                raise serializers.ValidationError({
+                    "scope_answers": "Each answer must include integer question and option IDs."
+                })
+            if question_id in answers_by_question:
+                raise serializers.ValidationError({
+                    "scope_answers": "A scope question may only be answered once."
+                })
+            answers_by_question[question_id] = option_id
+
+        if set(answers_by_question) != {question.id for question in questions}:
+            raise serializers.ValidationError({
+                "scope_answers": "Answer every required question for this service."
+            })
+
+        snapshot = []
+        for question in questions:
+            option_id = answers_by_question[question.id]
+            option = next(
+                (
+                    candidate
+                    for candidate in question.options.all()
+                    if candidate.id == option_id and candidate.is_active
+                ),
+                None,
+            )
+            if option is None:
+                raise serializers.ValidationError({
+                    "scope_answers": (
+                        f"Choose a valid option for '{question.label}'."
+                    )
+                })
+            snapshot.append({
+                "key": question.key,
+                "question": question.label,
+                "value": option.value,
+                "answer": option.label,
+            })
+
+        attrs["_scope_snapshot"] = snapshot
 
     def validate(self, attrs):
         location_type = attrs["job_location_type"]
@@ -201,6 +309,7 @@ class BookingCreateSerializer(serializers.ModelSerializer):
                     "a saved location ID."
                 )
 
+        self._validate_scope_answers(attrs)
         return attrs
 
 class BookingSummarySerializer(serializers.ModelSerializer):

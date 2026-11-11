@@ -62,7 +62,13 @@ async function decodeResponse(response) {
 }
 
 function apiErrorMessage(data) {
-  if (typeof data === 'string') return data
+  if (typeof data === 'string') {
+    if (/^\s*(?:<!doctype\s+html|<html\b)/i.test(data)) {
+      return 'The server returned an HTML page instead of an API response. Check that the backend is running and the API URL is correct.'
+    }
+    return data || 'The request could not be completed.'
+  }
+  if (!data || typeof data !== 'object') return 'The request could not be completed.'
   if (data.detail || data.error) return data.detail || data.error
   const firstFieldError = Object.values(data).flat(Infinity).find((value) => typeof value === 'string')
   return firstFieldError || 'The request could not be completed.'

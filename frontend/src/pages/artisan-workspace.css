@@ -134,6 +134,22 @@
   padding: 0.75rem;
 }
 
+.artisan-job-scope {
+  grid-column: 1 / -1;
+}
+
+.artisan-job-scope dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.artisan-job-scope dd span {
+  background: #f0f4f0;
+  border-radius: 5px;
+  padding: 0.3rem 0.45rem;
+}
+
 .artisan-dispute-note {
   background: #fff3f1;
   border-radius: 6px;
@@ -249,6 +265,113 @@
 
 .artisan-service-change .field-note {
   line-height: 1.5;
+}
+
+.artisan-service-picker-heading {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  justify-content: space-between;
+}
+
+.artisan-service-picker-heading .form-label {
+  flex: 1 1 260px;
+  margin-bottom: 0.35rem;
+  max-width: 520px;
+}
+
+.artisan-service-picker-heading .form-control {
+  font-weight: 400;
+}
+
+.artisan-service-selection-count {
+  background: var(--green-wash);
+  border-radius: 999px;
+  color: var(--green-dark);
+  font-size: 0.76rem;
+  font-weight: 700;
+  margin-bottom: 0.65rem;
+  padding: 0.45rem 0.7rem;
+  white-space: nowrap;
+}
+
+.artisan-service-groups {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  margin: 0.85rem 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 0.2rem 0.35rem 0.2rem 0.1rem;
+}
+
+.artisan-service-group {
+  background: #f8faf8;
+  border: 1px solid #e4eae4;
+  border-radius: 8px;
+  margin: 0;
+  min-width: 0;
+  padding: 0.55rem;
+}
+
+.artisan-service-group legend {
+  background: var(--green-wash);
+  border-radius: 5px;
+  color: var(--green-dark);
+  float: none;
+  font-size: 0.76rem;
+  font-weight: 750;
+  margin: 0 0 0.35rem;
+  padding: 0.22rem 0.5rem;
+  width: auto;
+}
+
+.artisan-service-options {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.artisan-service-options label {
+  align-items: flex-start;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.82rem;
+  font-weight: 500;
+  gap: 0.55rem;
+  line-height: 1.35;
+  min-height: 38px;
+  padding: 0.5rem;
+}
+
+.artisan-service-options label:hover,
+.artisan-service-options label.selected {
+  background: #edf4ee;
+  border-color: #d3e2d5;
+}
+
+.artisan-service-options input {
+  accent-color: var(--green-dark);
+  flex: 0 0 auto;
+  height: 16px;
+  margin-top: 0.05rem;
+  width: 16px;
+}
+
+.artisan-service-options span {
+  overflow-wrap: anywhere;
+}
+
+.artisan-service-empty {
+  background: #f7f9f7;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  margin: 0.85rem 0;
+  padding: 0.85rem;
 }
 
 .artisan-service-request-list {

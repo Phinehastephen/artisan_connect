@@ -575,6 +575,19 @@ class ServiceChangeRequestApiAndEmailTests(TestCase):
         self.assertEqual(update_response.data["business_name"], "Bright Plumbing")
         self.assertEqual(update_response.data["services"][0]["name"], "Plumbing")
 
+    def test_admin_pending_artisans_returns_named_services(self):
+        self.artisan.verification_status = Artisan.VerificationStatus.PENDING
+        self.artisan.save(update_fields=["verification_status"])
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.get("/api/v1/artisans/pending")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [service["name"] for service in response.data[0]["services"]],
+            ["Plumbing"],
+        )
+
     def test_artisan_cannot_submit_a_request_for_another_artisan(self):
         self.client.force_authenticate(user=self.artisan_user)
 

@@ -7,6 +7,7 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [form, setForm] = useState({ username: '', password: '' })
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -48,16 +49,27 @@ export default function LoginPage() {
         </div>
         <div className="mb-2">
           <label className="form-label" htmlFor="login-password">Password</label>
-          <input
-            autoComplete="current-password"
-            className="form-control"
-            id="login-password"
-            name="password"
-            onChange={(event) => setForm({ ...form, password: event.target.value })}
-            required
-            type="password"
-            value={form.password}
-          />
+          <div className="password-input-wrap">
+            <input
+              autoComplete="current-password"
+              className="form-control"
+              id="login-password"
+              name="password"
+              onChange={(event) => setForm({ ...form, password: event.target.value })}
+              required
+              type={showPassword ? 'text' : 'password'}
+              value={form.password}
+            />
+            <button
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
+              className="password-visibility-toggle"
+              onClick={() => setShowPassword((visible) => !visible)}
+              type="button"
+            >
+              <i aria-hidden="true" className={`bi bi-eye${showPassword ? '-slash' : ''}`} />
+            </button>
+          </div>
         </div>
         <div className="form-utility-row">
           <Link to="/password-reset">Forgot password?</Link>

@@ -609,8 +609,8 @@
 }
 
 .service-chip {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid #cfddcf;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--green-dark);
   font-size: 0.8rem;
@@ -620,7 +620,7 @@
 
 .service-chip:hover,
 .service-chip:focus-visible {
-  background: #fff;
+  background: var(--green-wash);
   border-color: var(--green);
 }
 

@@ -17,6 +17,11 @@
   padding: 0 clamp(1rem, 4vw, 4rem);
 }
 
+[data-theme="dark"] .topbar,
+[data-theme="dark"] .app-footer {
+  background-color: #22211f;
+}
+
 .brand {
   align-items: center;
   color: var(--ink);
@@ -33,14 +38,16 @@
 
 .brand-mark {
   align-items: center;
-  background: var(--green);
-  border-radius: 8px;
+  background: var(--brand-copper);
+  border-radius: 5px;
   color: #fff;
   display: inline-flex;
   font-family: Georgia, serif;
   font-size: 1.1rem;
   height: 34px;
   justify-content: center;
+  outline: 1px solid rgba(113, 68, 47, 0.2);
+  outline-offset: 2px;
   width: 34px;
 }
 
@@ -65,6 +72,14 @@
 .sign-in-link {
   border-radius: 6px;
   padding: 0.55rem 0.9rem;
+}
+
+.theme-toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.4rem;
+  justify-content: center;
+  min-width: 82px;
 }
 
 .session-indicator {
@@ -227,6 +242,16 @@
     margin-left: auto;
   }
 
+  .theme-toggle {
+    margin-left: auto;
+    min-width: 42px;
+    padding-inline: 0.55rem;
+  }
+
+  .theme-toggle span {
+    display: none;
+  }
+
   .workspace-page {
     padding-top: 3.5rem;
   }
@@ -280,6 +305,34 @@
 .auth-form .form-control:focus {
   border-color: var(--green);
   box-shadow: 0 0 0 0.2rem rgba(47, 118, 85, 0.16);
+}
+
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap .form-control {
+  padding-right: 3rem;
+}
+
+.password-visibility-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 1.05rem;
+  height: 38px;
+  justify-content: center;
+  position: absolute;
+  right: 0.4rem;
+  top: 4px;
+  width: 38px;
+}
+
+.password-visibility-toggle:hover {
+  color: var(--ink);
 }
 
 .auth-submit {

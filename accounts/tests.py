@@ -469,6 +469,38 @@ class AccountIntegrityTests(TestCase):
         )
 
         self.assertEqual(admin.role, User.Role.ADMIN)
+        self.assertTrue(admin.is_staff)
+        self.assertTrue(admin.is_superuser)
+
+    def test_web_admin_is_not_a_django_admin_user(self):
+        from django.contrib.admin.sites import site
+
+        web_admin = User.objects.create_user(
+            username="webadmin",
+            email="webadmin@example.com",
+            password="StrongPassword123!",
+            role=User.Role.ADMIN,
+        )
+        request = APIRequestFactory().get("/admin/")
+        request.user = web_admin
+
+        self.assertFalse(web_admin.is_staff)
+        self.assertFalse(web_admin.is_superuser)
+        self.assertTrue(IsAdmin().has_permission(request, None))
+        self.assertFalse(site.has_permission(request))
+
+    def test_super_admin_can_access_django_admin(self):
+        from django.contrib.admin.sites import site
+
+        super_admin = User.objects.create_superuser(
+            username="superboss",
+            email="superboss@example.com",
+            password="StrongPassword123!",
+        )
+        request = APIRequestFactory().get("/admin/")
+        request.user = super_admin
+
+        self.assertTrue(site.has_permission(request))
 
     def test_email_is_stored_lowercase_from_any_path(self):
         user = User.objects.create_user(

@@ -81,7 +81,7 @@ class PendingArtisanListAPIView(APIView):
     def get(self, request):
         artisans = Artisan.objects.filter(
             verification_status=Artisan.VerificationStatus.PENDING
-        ).order_by("-created_at")
+        ).prefetch_related("services").order_by("-created_at")
 
         serializer = ArtisanSerializer(artisans, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -93,7 +93,7 @@ class RejectedArtisanListAPIView(APIView):
     def get(self, request):
         artisans = Artisan.objects.filter(
             verification_status=Artisan.VerificationStatus.REJECTED
-        ).order_by("-created_at")
+        ).prefetch_related("services").order_by("-created_at")
 
         serializer = ArtisanSerializer(artisans, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

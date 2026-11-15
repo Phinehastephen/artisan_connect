@@ -21,6 +21,43 @@ CONFIRMATION_REMINDER_SCHEDULE = [
     timedelta(hours=66),
 ]
 
+BOOKING_EMAIL_EVENTS = {
+    "requested": (
+        "artisan",
+        "New booking request",
+        "A customer sent you a booking request for {service}. "
+        "Sign in to Artisan Connect to review and respond.",
+    ),
+    "accepted": (
+        "customer",
+        "Booking accepted",
+        "Your booking request for {service} was accepted. "
+        "Sign in to Artisan Connect to review the next steps.",
+    ),
+    "rejected": (
+        "customer",
+        "Booking declined",
+        "The artisan declined your booking request for {service}. "
+        "You can return to Artisan Connect to find another artisan.",
+    ),
+    "cancelled": (
+        "artisan",
+        "Booking cancelled",
+        "The customer cancelled their booking request for {service}.",
+    ),
+    "on_the_way": (
+        "customer",
+        "Your artisan is on the way",
+        "Your artisan marked themselves as on the way for {service}.",
+    ),
+    "completed": (
+        "customer",
+        "Work marked complete",
+        "Your artisan marked the {service} job complete. "
+        "Sign in to confirm the work or report a problem.",
+    ),
+}
+
 
 JOB_LOCATION_FIELDS = ["job_address", "job_latitude", "job_longitude"]
 
@@ -53,6 +90,85 @@ def _notify_booking_user(*, booking, recipient, notification_type, title, messag
     )
 
 
+def _queue_booking_event_email(booking, event):
+    if event not in BOOKING_EMAIL_EVENTS:
+        raise ValueError(f"Unknown booking email event: {event}")
+
+    transaction.on_commit(
+        lambda: run_in_background(
+            send_booking_event_email,
+            booking.pk,
+            event,
+        )
+    )
+
+
+def send_booking_event_email(booking_id, event):
+    if event not in BOOKING_EMAIL_EVENTS:
+        raise ValueError(f"Unknown booking email event: {event}")
+
+    booking = (
+        Booking.objects.select_related(
+            "customer__user",
+            "artisan__user",
+            "service",
+        )
+        .filter(pk=booking_id)
+        .first()
+    )
+    if booking is None:
+        logger.warning(
+            "Could not send %s email for missing booking %s",
+            event,
+            booking_id,
+        )
+        return
+
+    if booking.service is None:
+        logger.warning(
+            "Could not send %s email for booking %s: service is missing",
+            event,
+            booking_id,
+        )
+        return
+
+    recipient_role, title, message = BOOKING_EMAIL_EVENTS[event]
+    party = getattr(booking, recipient_role, None)
+    recipient = getattr(party, "user", None)
+    if recipient is None or not recipient.email:
+        logger.warning(
+            "Could not send %s email for booking %s: recipient email is missing",
+            event,
+            booking_id,
+        )
+        return
+
+    try:
+        sent = send_mail(
+            subject=f"{title} — booking #{booking.pk}",
+            message=(
+                f"Hi {recipient.full_name},\n\n"
+                f"{message.format(service=booking.service.name)}\n\n"
+                f"Booking reference: #{booking.pk}\n"
+                "Artisan Connect"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[recipient.email],
+        )
+        if not sent:
+            logger.warning(
+                "Email backend did not send %s email for booking %s",
+                event,
+                booking_id,
+            )
+    except Exception:
+        logger.exception(
+            "Failed to send %s email for booking %s",
+            event,
+            booking_id,
+        )
+
+
 @transaction.atomic
 def accept_booking(booking):
     """
@@ -73,6 +189,7 @@ def accept_booking(booking):
         title="Booking accepted",
         message=f"Your booking #{booking.pk} has been accepted.",
     )
+    _queue_booking_event_email(booking, "accepted")
     return booking
 
 
@@ -129,6 +246,7 @@ def mark_booking_on_the_way(booking):
         title="Your artisan is on the way",
         message=f"The artisan for booking #{booking.pk} is on the way.",
     )
+    _queue_booking_event_email(booking, "on_the_way")
     return booking
 
 
@@ -159,6 +277,7 @@ def complete_booking(booking):
         title="Work marked complete",
         message=f"The artisan marked booking #{booking.pk} complete. Please confirm or dispute it.",
     )
+    _queue_booking_event_email(booking, "completed")
     return booking
 
 
@@ -182,6 +301,7 @@ def reject_booking(booking):
         title="Booking declined",
         message=f"Your booking #{booking.pk} was declined by the artisan.",
     )
+    _queue_booking_event_email(booking, "rejected")
     return booking
 
 
@@ -212,6 +332,7 @@ def cancel_booking(booking):
         title="Booking cancelled",
         message=f"Booking #{booking.pk} was cancelled by the customer.",
     )
+    _queue_booking_event_email(booking, "cancelled")
     return booking
 
 
@@ -542,5 +663,6 @@ def create_booking(
         title="New booking request",
         message=f"You received a new booking request for {service.name} (#{booking.pk}).",
     )
+    _queue_booking_event_email(booking, "requested")
 
     return booking

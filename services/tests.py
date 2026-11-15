@@ -12,7 +12,7 @@ class ServicePriceRangeTests(TestCase):
 
     def test_changing_service_prices_updates_artisan_ranges(self):
         service = Service.objects.create(
-            name="Plumbing",
+            name="Plumbing Price Range Test",
             description="General plumbing services",
             minimum_price=1000,
             maximum_price=5000,
@@ -87,3 +87,35 @@ class ServiceScopeApiTests(TestCase):
             [option["label"] for option in response.data[0]["options"]],
             ["Birthday"],
         )
+
+    def test_v1_service_catalog_has_scope_questions(self):
+        service_names = [
+            "AC & Refrigeration",
+            "Auto Repair",
+            "Barber",
+            "Cake Making",
+            "Carpentry",
+            "Cleaning",
+            "Electrical",
+            "Generator Repair",
+            "Hair Stylist",
+            "Makeup artist (MUA)",
+            "Masonry",
+            "Painting",
+            "Plumbing",
+            "Tailoring",
+        ]
+        services = Service.objects.filter(
+            name__in=service_names,
+            is_active=True,
+        )
+
+        self.assertSetEqual(
+            set(services.values_list("name", flat=True)),
+            set(service_names),
+        )
+        for service in services:
+            with self.subTest(service=service.name):
+                self.assertTrue(
+                    service.scope_questions.filter(is_active=True).exists()
+                )

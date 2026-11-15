@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
 import { AuthProvider, homeForRole, useAuth } from './auth/AuthContext'
 import RoleRoute from './auth/RoleRoute'
@@ -6,7 +7,15 @@ import PasswordResetPage from './pages/PasswordResetPage'
 import RegisterPage from './pages/RegisterPage'
 import CustomerWorkspacePage from './pages/CustomerWorkspacePage'
 import ArtisanWorkspacePage from './pages/ArtisanWorkspacePage'
+import AdminWorkspacePage from './pages/AdminWorkspacePage'
 import './app-shell.css'
+
+function getInitialTheme() {
+  const savedTheme = window.localStorage.getItem('artisan-connect-theme')
+  if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
 
 const workspaces = [
   {
@@ -83,6 +92,12 @@ function WorkspacePlaceholder({ title }) {
 
 function AppLayout() {
   const { user, loading, logout } = useAuth()
+  const [theme, setTheme] = useState(getInitialTheme)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    window.localStorage.setItem('artisan-connect-theme', theme)
+  }, [theme])
 
   return (
     <div className="app-frame">
@@ -108,6 +123,15 @@ function AppLayout() {
             </NavLink>
           )}
         </nav>
+        <button
+          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          className="btn btn-sm btn-outline-dark theme-toggle"
+          onClick={() => setTheme((currentTheme) => currentTheme === 'light' ? 'dark' : 'light')}
+          type="button"
+        >
+          <i aria-hidden="true" className={`bi bi-${theme === 'light' ? 'moon-stars' : 'sun'}`} />
+          <span>{theme === 'light' ? 'Night' : 'Day'}</span>
+        </button>
         {loading ? (
           <span aria-label="Loading session" className="session-indicator" role="status" />
         ) : user ? (
@@ -146,7 +170,7 @@ function AppLayout() {
           <Route
             element={(
               <RoleRoute allowedRoles={['ADMIN']}>
-                <WorkspacePlaceholder title="Administration" />
+                <AdminWorkspacePage />
               </RoleRoute>
             )}
             path="/admin/*"

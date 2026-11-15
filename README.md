@@ -189,7 +189,7 @@ The system is organized around the following modules:
 - `services_servicescopequestion` / `services_servicescopeoption` — structured, admin-manageable job details shown before artisan discovery
 - `artisans_artisan_services` — which services each artisan offers
 
-The first scope-question set covers Hair Stylist, Cake Making, Makeup artist (MUA), Plumbing, and Auto Repair. Scope answers describe the requested work only; no job-specific price is calculated.
+Structured service scopes are available for the active V1 catalog: AC & Refrigeration, Auto Repair, Barber, Cake Making, Carpentry, Cleaning, Electrical, Generator Repair, Hair Stylist, Makeup artist (MUA), Masonry, Painting, Plumbing, and Tailoring. A fresh database also receives the catalog entries and the existing reference ranges; the `Test Plumbing` fixture is deliberately excluded. Scope answers describe the requested work only; no job-specific price is calculated.
 
 ### Booking, Review & Location Tables
 
@@ -207,7 +207,7 @@ Additional modules are introduced according to their dependencies and approved d
 
 ### Notifications
 
-In-app notifications are created for booking requests and status changes, completion reminders, disputes, reviews received by artisans, and service-change submissions/decisions. Dispute and service-change email alerts remain enabled as a backup.
+In-app notifications are created for booking requests and status changes, completion reminders, disputes, reviews received by artisans, and service-change submissions/decisions. Booking event emails are also sent for new requests (to the artisan), acceptance or decline (to the customer), customer cancellation (to the artisan), the artisan going on the way, and work completion (to the customer). These emails are queued after the booking transaction commits and sent in the background; a delivery failure is logged and never rolls back the booking. Emails omit the private job address and location. Completion reminders, dispute alerts, and service-change emails remain enabled separately.
 
 - `GET /api/v1/notifications/` — list the signed-in user's notifications (`page`, `page_size`, and `unread_only=true` are supported); response includes the unread count.
 - `GET /api/v1/notifications/unread-count` — get the signed-in user's unread count.
@@ -247,9 +247,12 @@ Artisans can:
 
 ### Administrator
 
-Administrators manage and monitor the platform through the administrative system.
+Artisan Connect has two administrative levels:
 
-Higher-level administrative capabilities, such as advanced moderation and custom administration dashboards, are planned for later versions where appropriate.
+- **Web admin (`role=ADMIN`, not Django staff):** signs in through the frontend and uses the `/admin` management workspace for artisan verification, service-change reviews, and disputed-booking decisions. A web admin account does not have access to Django's `/admin/` site or its full data-management controls.
+- **Super admin (Django superuser):** created with `python manage.py createsuperuser`; has Django staff/superuser privileges and can use Django Admin for full platform configuration and account management. The super admin also has the `ADMIN` application role and can use the web admin workspace.
+
+This keeps operational review work in the web admin workspace while reserving Django Admin and its elevated controls for super admins. Create regular web-admin accounts from Django Admin as `ADMIN` users and leave `is_staff` and `is_superuser` disabled.
 
 ---
 
@@ -514,7 +517,7 @@ The following rules were not part of the original SRS/design but were establishe
 - **Customers can edit their own profile at any time** (`PATCH /api/v1/customers/customer/details`): username, full name, profile picture, and default location, with no cooldowns. Their **phone number and email can never be changed** through the app; a request that tries to is rejected rather than silently ignored. Usernames must be unique (ignoring capitalisation).
 - **Usernames are private.** Other users never see someone's username (it is half of their login details); they see the full name or business name instead.
 - **Logging in and registering are rate-limited** (10 login attempts per minute and 10 registrations per hour from one address) to slow down password guessing and protect the email quota.
-- **Admin accounts are created with `python manage.py createsuperuser`**, which gives them the admin role. Customers and artisans should always be created through registration, which also creates their profile.
+- **Administrative access has two levels.** A regular web admin has `role=ADMIN` with `is_staff=False` and `is_superuser=False`; a Django super admin is created with `python manage.py createsuperuser`, which also assigns the `ADMIN` role. Only super admins use Django Admin; both levels can use the web admin workspace. Customers and artisans should always be created through registration, which also creates their profile.
 - **A service's price change updates every artisan who offers it**, including when edited in Django admin. In Django admin, an artisan's price range and verification status are read-only; artisans are approved or rejected with the "Approve/Reject selected pending artisans" actions, which follow the same pending-only rule as the API.
 - **Re-submitting an unchanged profile value doesn't count as a change**, so it never starts or trips a 6-month cooldown.
 - **Pending and rejected artisans cannot log in.** An artisan can only log in once an admin has approved them.
@@ -703,6 +706,19 @@ This is a deferred design baseline, not permission to collect data or build the 
 
 **Important:** labour estimation concerns labour costs only; material costs are excluded.
 
+### Travel and Materials Costing
+
+**Status: late-Version-2 candidate; not approved for implementation.** A future quote flow may help both parties understand travel, labour, and materials, but must not combine them into one unexplained estimate:
+
+- Keep labour pricing distinct from travel and material costs. The labour-only rules above remain the baseline for any labour proposal.
+- Any travel/distance charge needs an approved calculation rule, including the distance source, rounding, rate, maximum charge, and what happens when the customer and artisan disagree. Do not expose private artisan coordinates or use map distance as a proxy for an agreed travel fee.
+- Materials should be an itemized, optional quote supplied by the artisan after assessing the job, not an automatic model estimate. The customer should be able to accept the artisan sourcing them or choose to source them independently.
+- Show who supplied each amount and require the customer to approve each applicable component before treating it as agreed. Keep price agreement separate from booking status, payment status, and job completion.
+- Define how revisions, unavailable items, receipts, unused materials, refunds, and disagreements are handled before implementation. Do not put quote fields on the frozen `Booking` table; design a separate, auditable record if approved.
+- Do not collect materials or travel observations for model training by default. Any training use requires the separate consent, privacy, eligibility, and retention safeguards in the labour-estimation baseline.
+
+This costing flow is deliberately placed near the end of the Version 2 roadmap. It requires product, data, and dispute rules before engineering begins.
+
 ---
 
 ## 🚀 Version Roadmap
@@ -721,6 +737,7 @@ The first release focuses on the core platform:
 - Booking, including an explicit repeat-request flow from a finalized booking (the customer reviews the details, chooses a location, and submits a new request)
 - Reviews
 - Notifications
+- Workmanship-inspired light and dark themes with a user-selectable, remembered mode
 - Smart search
 - Privacy-conscious data collection to support future improvements
 - Email verification
@@ -730,11 +747,14 @@ The first release focuses on the core platform:
 
 Planned enhancements include:
 
+- Production deployment and hosting readiness, deferred until hosting, domain, monitoring, backup, and operational requirements are decided. The Docker setup below is for local development and does not mean the service is production-ready.
 - Verification levels
 - Community suggestions
 - Date of birth support
 - Enhanced AI/recommendations
-- Consider labour-only data collection after the school defense; develop a price estimator only if separately approved and enough suitable, consented examples exist
+- **Customer retention and repeat engagement:** build on V1's explicit repeat-booking flow by making recent services and previously hired artisans easier to find; provide useful, optional post-job follow-up; and let customers opt into service reminders they choose. Reminders must never create a booking automatically. Keep communications relevant, respect notification preferences and opt-outs, and avoid unsolicited promotional email.
+- Consider labour-only data collection after the school defense; develop a labour estimator only if separately approved and enough suitable, consented examples exist
+- As a late V2 candidate only, consider a separate, transparent travel/labour/material quote flow after its pricing, customer-consent, revision, and dispute rules are approved (see [Travel and Materials Costing](#travel-and-materials-costing))
 - Custom admin dashboard
 - Additional analytics
 - Live text chat as a future token-gated feature; define access limits, expiry, privacy, and moderation before implementation
@@ -763,6 +783,20 @@ V1 remains based on an individual artisan owning their profile and each booking.
 ## End goal (An end-to-end service marketplace)
 Customers use Artisan Connect to discover, communicate with, book, manage, pay for, and review artisans. Artisans use it to manage their professional business activities.
 The platform focuses on building long-term relationships and repeat transactions.
+
+### Customer Retention Approach
+
+Retention should come from customers finding Artisan Connect trustworthy and useful, not from excessive notifications, forced engagement, or unclear rewards. The V1 repeat-booking flow is the foundation: after a finalized booking, customers can start a fresh request with the same artisan, review the details, and choose a location.
+
+Version 2 retention work should prioritize:
+
+- Make it easy to return to recent services and artisans the customer has previously hired, while re-checking current service availability and requiring a new customer-confirmed request.
+- Use helpful post-job follow-up to invite feedback/reviews and make repeat booking discoverable without making either action compulsory.
+- Offer customer-controlled reminders only for services and timing the customer opts into. Provide clear controls to change or stop reminders; reminders must not automatically book an artisan.
+- Keep recommendations relevant to the customer's request and location, and respect notification settings. Do not send unsolicited promotional emails or expose private location/contact data to personalize engagement.
+- Evaluate retention using privacy-conscious aggregate measures (for example, completed repeat bookings and opted-in reminder engagement), not by collecting unnecessary personal or precise-location data.
+
+Loyalty points, referral credits, and paid engagement features remain separate future concepts. Do not introduce them until their earning, redemption, expiry, accounting, abuse-prevention, and access rules are approved.
 
 
 ## Financial and Reward Concepts
@@ -849,12 +883,12 @@ Phase 3 → Django Setup
 Phase 4 → Backend Development
 Phase 5 → Frontend Development
 Phase 6 → Testing
-Phase 7 → Deployment
+Phase 7 → Production deployment (deferred to a later version)
 ```
 
 ### Current Development Direction
 
-The project has an established Django API foundation and has started **frontend development**. The customer workspace supports artisan discovery, booking management, saved locations, reviews, and customer profile editing. The artisan workspace supports booking management, profile editing under the approved verification and cooldown rules, readable service names, and admin-reviewed service change requests. Backend features and testing continue alongside the frontend.
+The project has implemented the V1 customer and artisan workspaces, including discovery, booking management, saved locations, reviews, profile editing, and admin-reviewed service changes. The admin workspace provides artisan verification decisions, service-change review, and a disputed-booking queue. Remaining V1 closure is end-to-end regression and usability/accessibility validation. Production hosting is deferred; a local Docker workflow is provided below.
 
 The backend work includes:
 
@@ -869,6 +903,28 @@ The backend work includes:
 - Business logic
 - Validation
 - Testing
+
+### Local Docker Development
+
+Docker Compose runs PostgreSQL, the Django API, and the built React frontend for local development. It is not a production deployment configuration.
+
+1. Copy `.env.docker.example` to `.env.docker` and replace `SECRET_KEY` and `DB_PASSWORD` with local-only values.
+2. From the repository root, run:
+
+   ```powershell
+   docker compose --env-file .env.docker up --build
+   ```
+
+3. Open the frontend at `http://localhost:8080`; the API is also available at `http://localhost:8000/api/v1/`.
+4. To create an admin account:
+
+   ```powershell
+   docker compose --env-file .env.docker exec backend python manage.py createsuperuser
+   ```
+
+5. Stop the containers with `docker compose --env-file .env.docker down`. Database records and private uploads persist in named volumes.
+
+The database migration seeds the V1 service catalog and structured scope questions without overwriting existing admin-managed records. Email uses Django's console backend in this local configuration. Production deployment, secret management, and operational hardening remain deferred.
 
 ---
 
@@ -957,31 +1013,34 @@ The exact structure may evolve as implementation progresses, but changes must re
 
 **Project Status: Active Development**
 
-| Area                                     | Status                |
-| ---------------------------------------- | --------------------- |
-| Product Vision                           | ✅ Complete           |
-| Project Bible                            | ✅ Established        |
-| SRS / Requirements                       | ✅ Established        |
-| Architecture                             | ✅ Established        |
-| Database Design                          | ✅ Established        |
-| Django Setup                             | ✅ Complete           |
-| PostgreSQL Integration                   | ✅ Complete           |
-| Authentication Foundation                | ✅ Complete           |
-| Email Verification                       | ✅ Complete           |
-| Password Reset                           | ✅ Complete           |
-| Customer Module                          | ✅ Complete           |
-| Service Management                       | 🔄 In Progress        |
-| Service Change Requests                  | ✅ Complete (backend) |
-| Booking                                  | ✅ Complete (backend) |
-| Reviews & Ratings                        | ✅ Complete (backend) |
-| Location                                 | 🔄 In Progress        |
-| Notifications                            | ✅ Complete (backend) |
-| Smart Search (V1)                        | ✅ Complete (backend) |
-| AI Features (recommendations, V2 search) | ⏳ Planned/Developing |
-| Labour Price Estimation                  | ⏳ Deferred to V2/V3  |
-| Frontend                                 | 🔄 In Progress        |
-| Testing                                  | 🔄 Ongoing            |
-| Deployment                               | ⏳ Later Phase        |
+| Area                                     | Status                                      |
+| ---------------------------------------- | ------------------------------------------- |
+| Product Vision                           | ✅ Complete                                 |
+| Project Bible                            | ✅ Established                              |
+| SRS / Requirements                       | ✅ Established                              |
+| Architecture                             | ✅ Established                              |
+| Database Design                          | ✅ Established                              |
+| Django Setup                             | ✅ Complete                                 |
+| PostgreSQL Integration                   | ✅ Complete                                 |
+| Authentication Foundation                | ✅ Complete                                 |
+| Email Verification                       | ✅ Complete                                 |
+| Password Reset                           | ✅ Complete                                 |
+| Customer Workspace                       | ✅ Core V1 flows implemented                |
+| Artisan Workspace                        | ✅ Core V1 flows implemented                |
+| Admin Workspace                          | ✅ Verification, service review, disputes    |
+| Service Management                       | ✅ Catalog and service-change workflows     |
+| Booking                                  | ✅ Core workflow, scope, journey, repeat     |
+| Reviews & Ratings                        | ✅ Core workflow implemented                |
+| Location                                 | ✅ Saved locations, maps, and geocoding     |
+| Notifications                            | ✅ In-app backend and booking email events  |
+| Smart Search (V1)                        | ✅ Backend and customer discovery flow       |
+| AI Features (V2 enhancements)            | ⏳ Planned                                  |
+| Labour / travel / materials costing       | ⏳ Deferred candidate for late V2/V3         |
+| Frontend release validation              | 🔄 In progress                              |
+| End-to-end regression and QA             | 🔄 Ongoing                                  |
+| Production deployment                    | ⏳ Deferred to a later version              |
+
+V1 feature implementation is considered complete; the remaining V1 closure is regression and usability/accessibility QA. This does not claim that the MVP is production-ready or deployed.
 
 ---
 

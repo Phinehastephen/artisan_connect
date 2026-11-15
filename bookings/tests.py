@@ -32,6 +32,99 @@ from .services import (
 )
 
 
+class BookingEventEmailTests(TestCase):
+    def setUp(self):
+        mail.outbox = []
+        self.customer_user = User.objects.create_user(
+            username="email_customer",
+            email="email_customer@example.com",
+            password="email-test-password",
+            full_name="Email Customer",
+            role=User.Role.CUSTOMER,
+        )
+        self.customer = Customer.objects.create(user=self.customer_user)
+        self.artisan_user = User.objects.create_user(
+            username="email_artisan",
+            email="email_artisan@example.com",
+            password="email-test-password",
+            full_name="Email Artisan",
+            role=User.Role.ARTISAN,
+        )
+        self.artisan = Artisan.objects.create(
+            user=self.artisan_user,
+            phone_number="08000000001",
+            verification_status="VERIFIED",
+        )
+        self.service = Service.objects.create(
+            name="Email Test Plumbing",
+            description="Plumbing services",
+            minimum_price=1000,
+            maximum_price=5000,
+            is_active=True,
+        )
+        self.artisan.services.add(self.service)
+
+    def _run_after_commit(self, callback):
+        with self.settings(SEND_EMAIL_IN_BACKGROUND=False):
+            with self.captureOnCommitCallbacks(execute=True):
+                return callback()
+
+    def _create_booking(self):
+        return create_booking(
+            customer=self.customer,
+            artisan=self.artisan,
+            service=self.service,
+            job_address="Private job address",
+            job_latitude=6.524400,
+            job_longitude=3.379200,
+        )
+
+    def test_key_booking_events_email_the_correct_party(self):
+        booking = self._run_after_commit(self._create_booking)
+        self.assertEqual(mail.outbox[-1].to, [self.artisan_user.email])
+        self.assertIn("New booking request", mail.outbox[-1].subject)
+        self.assertNotIn("Private job address", mail.outbox[-1].body)
+
+        self._run_after_commit(lambda: accept_booking(booking))
+        self.assertEqual(mail.outbox[-1].to, [self.customer_user.email])
+        self.assertIn("accepted", mail.outbox[-1].body)
+
+        self._run_after_commit(lambda: mark_booking_on_the_way(booking))
+        self.assertEqual(mail.outbox[-1].to, [self.customer_user.email])
+        self.assertIn("on the way", mail.outbox[-1].body)
+
+        self._run_after_commit(lambda: start_booking(booking))
+        self.assertEqual(len(mail.outbox), 3)
+
+        self._run_after_commit(lambda: complete_booking(booking))
+        self.assertEqual(mail.outbox[-1].to, [self.customer_user.email])
+        self.assertIn("confirm the work", mail.outbox[-1].body)
+        self.assertEqual(len(mail.outbox), 4)
+
+    def test_decline_and_customer_cancellation_email_the_other_party(self):
+        booking = self._run_after_commit(self._create_booking)
+        mail.outbox = []
+
+        self._run_after_commit(lambda: reject_booking(booking))
+        self.assertEqual(mail.outbox[-1].to, [self.customer_user.email])
+        self.assertIn("declined", mail.outbox[-1].body)
+
+        booking = self._run_after_commit(self._create_booking)
+        mail.outbox = []
+        self._run_after_commit(lambda: cancel_booking(booking))
+        self.assertEqual(mail.outbox[-1].to, [self.artisan_user.email])
+        self.assertIn("cancelled", mail.outbox[-1].body)
+
+    def test_email_failure_does_not_prevent_booking_creation(self):
+        with self.settings(SEND_EMAIL_IN_BACKGROUND=False):
+            with patch("bookings.services.send_mail", side_effect=Exception("SMTP down")):
+                with self.captureOnCommitCallbacks(execute=True):
+                    booking = self._create_booking()
+
+        self.assertEqual(booking.status, Booking.Status.PENDING)
+        self.assertTrue(Booking.objects.filter(pk=booking.pk).exists())
+
+
 class BookingBusinessLogicTests(TestCase):
 
     def setUp(self):

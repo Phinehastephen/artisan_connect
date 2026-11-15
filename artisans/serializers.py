@@ -9,6 +9,7 @@ from .models import Artisan, ServiceChangeRequest, ServiceQualificationEvidence
 
 class ArtisanSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
+    services = ServiceSerializer(many=True, read_only=True)
 
     class Meta:
         model = Artisan

@@ -24,7 +24,7 @@ Verified behaviors:
 - `current` and `saved` location modes both resolve to usable coordinates
 - nearby-artisan discovery returns only verified artisans within range
 - Smart Search resolves the active service, resolves the customer's location, then returns map-ready results from the composite recommendation ranker
-- the full Smart Search → current/saved location → map payload → composite ranking simulation passes: `python manage.py test ai.tests.SmartSearchRankingTests.test_full_search_location_map_and_composite_ranking_flow`
+- the full Smart Search → current/saved location → map payload → composite ranking simulation passes: `python backend/manage.py test ai.tests.SmartSearchRankingTests.test_full_search_location_map_and_composite_ranking_flow`
 - the booking flow has been validated end-to-end in Postman and Django: `PENDING -> ACCEPTED -> IN_PROGRESS -> COMPLETED -> FINALIZED`
 - a normal successful booking finalizes via customer confirmation as `CUSTOMER_CONFIRMED`
 - if the customer never confirms, the booking auto-finalizes after 72 hours as `AUTO`
@@ -48,35 +48,36 @@ If confirmation is skipped, the job remains `COMPLETED` and auto-finalizes after
 
 ## Commands
 
-Config is loaded from a `.env` file at the repo root (`SECRET_KEY`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`). The project uses PostgreSQL — there is no sqlite fallback in settings despite `db.sqlite3` being present in the repo.
+Run Django commands from the repository root using `python backend/manage.py <command>`. Django source and apps are in `backend/`; React/Vite is in `frontend/`. Install backend dependencies with `pip install -r backend/requirements.txt`. Configuration is loaded from the root `.env` file (`SECRET_KEY`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`). The project uses PostgreSQL — there is no sqlite fallback in settings despite `db.sqlite3` being present in the repo. Code paths in this guide are relative to `backend/` unless otherwise noted. For older inline command references that say `python manage.py`, use `python backend/manage.py` from the repository root.
 
 ```bash
+# Run commands from the repository root. Django source is in backend/.
 # Run the dev server
-python manage.py runserver
+python backend/manage.py runserver
 
 # Migrations
-python manage.py makemigrations
-python manage.py migrate
+python backend/manage.py makemigrations
+python backend/manage.py migrate
 
 # Run all tests
-python manage.py test
+python backend/manage.py test
 
 # Run tests for one app
-python manage.py test artisans
+python backend/manage.py test artisans
 
 # Run a single test case / method
-python manage.py test artisans.tests.ArtisanBusinessLogicTests
-python manage.py test artisans.tests.ArtisanBusinessLogicTests.test_artisan_cannot_have_four_services
+python backend/manage.py test artisans.tests.ArtisanBusinessLogicTests
+python backend/manage.py test artisans.tests.ArtisanBusinessLogicTests.test_artisan_cannot_have_four_services
 
 # Django shell
-python manage.py shell
+python backend/manage.py shell
 ```
 
 There is no linter or formatter configured in this repo.
 
 ## Architecture
 
-Each domain lives in its own Django app: `accounts`, `customers`, `artisans`, `services`, `bookings`, `reviews`, `locations`, `notifications`, and `recommendations`. All are wired under `config/` (settings, root urlconf). URLs are namespaced per app under `/api/v1/<app>/` in [config/urls.py](config/urls.py).
+Each domain lives in its own Django app under `backend/`: `accounts`, `customers`, `artisans`, `services`, `bookings`, `reviews`, `locations`, `notifications`, and `recommendations`. All are wired under `backend/config/` (settings, root urlconf). URLs are namespaced per app under `/api/v1/<app>/` in `backend/config/urls.py`.
 
 **Layering used consistently across every app** — read this before adding logic anywhere:
 
@@ -86,7 +87,7 @@ views.py (APIView)  →  serializers.py (validation/shape)  →  services.py (bu
 
 - `views.py` never contains business rules — it parses the request via a serializer, delegates to a function in `services.py`, and translates the result/`ValidationError` into an HTTP `Response`.
 - `services.py` holds the actual business logic (state transitions, quota checks, authorization-adjacent invariants) as plain functions wrapped in `@transaction.atomic`, raising `django.core.exceptions.ValidationError` on rule violations. This is the layer to check/extend when a "business rule" needs to change.
-- Serializers' `create()`/`update()` often just delegate to a `services.py` function rather than doing `Model.objects.create(**validated_data)` directly (see `accounts/serializers.py` calling `register_customer`/`register_artisan`).
+- Serializers' `create()`/`update()` often just delegate to a `services.py` function rather than doing `Model.objects.create(**validated_data)` directly (see `backend/accounts/serializers.py` calling `register_customer`/`register_artisan`).
 
 **Identity model**: `accounts.User` (custom `AUTH_USER_MODEL`, `AbstractUser` subclass) carries a `role` field (`CUSTOMER` / `ARTISAN` / `ADMIN`). `createsuperuser` sets `role=ADMIN` (custom `UserManager`), and `User.save()` lowercases the email on every path. `IsCustomer`/`IsArtisan` require the matching profile row as well as the role, so a role-only user (e.g. made in Django admin) gets a 403 rather than a 500 — create customers/artisans through registration (the Django admin add-user form only offers the ADMIN role for that reason). `User.clean()` lowercases the email so the admin form's unique check catches case-variant duplicates. Usernames are unique case-insensitively at registration and on customer rename; artisans can't change their username. Registering a customer or artisan creates both the `User` row and a matching `customers.Customer` / `artisans.Artisan` profile row in one atomic call (`accounts/services.py`) — there is no separate "create profile" step. `Artisan` and `Customer` are OneToOne with `User`.
 

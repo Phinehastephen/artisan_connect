@@ -16,12 +16,14 @@ from dotenv import load_dotenv
 
 from datetime import timedelta
 
-load_dotenv()
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# `BASE_DIR` is the backend application; `PROJECT_ROOT` contains shared config
+# such as the root .env file and local private-upload directory.
 BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BASE_DIR.parent
+load_dotenv(PROJECT_ROOT / ".env")
+
 PRIVATE_UPLOAD_ROOT = Path(
-    os.getenv("PRIVATE_UPLOAD_ROOT", str(BASE_DIR / "private_uploads"))
+    os.getenv("PRIVATE_UPLOAD_ROOT", str(PROJECT_ROOT / "private_uploads"))
 ).expanduser().resolve()
 
 
@@ -47,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
+    "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
 
@@ -64,12 +67,22 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
 ]
 
 ROOT_URLCONF = 'config.urls'

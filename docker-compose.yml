@@ -34,16 +34,6 @@ services:
       - private_uploads:/app/private_uploads
     restart: unless-stopped
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    depends_on:
-      - backend
-    ports:
-      - "${WEB_PORT:-8080}:80"
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   private_uploads:

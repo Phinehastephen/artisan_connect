@@ -147,7 +147,7 @@ Customer creates booking
 If the customer does not confirm, the system waits 72 hours and then finalizes automatically as `AUTO`.
 If the customer disputes the job, the booking moves to `DISPUTED` and an admin finalizes it as `ADMIN`.
 
-A dedicated regression test now verifies the map/nearby-artisan flow in `locations/tests.py`:
+A dedicated regression test now verifies the map/nearby-artisan flow in `backend/locations/tests.py`:
 
 - `MapNearbyArtisanFlowTests`
 - confirms current and saved location modes return the same nearby artisan markers
@@ -250,7 +250,7 @@ Artisans can:
 Artisan Connect has two administrative levels:
 
 - **Web admin (`role=ADMIN`, not Django staff):** signs in through the frontend and uses the `/admin` management workspace for artisan verification, service-change reviews, and disputed-booking decisions. A web admin account does not have access to Django's `/admin/` site or its full data-management controls.
-- **Super admin (Django superuser):** created with `python manage.py createsuperuser`; has Django staff/superuser privileges and can use Django Admin for full platform configuration and account management. The super admin also has the `ADMIN` application role and can use the web admin workspace.
+- **Super admin (Django superuser):** created with `python backend/manage.py createsuperuser`; has Django staff/superuser privileges and can use Django Admin for full platform configuration and account management. The super admin also has the `ADMIN` application role and can use the web admin workspace.
 
 This keeps operational review work in the web admin workspace while reserving Django Admin and its elevated controls for super admins. Create regular web-admin accounts from Django Admin as `ADMIN` users and leave `is_staff` and `is_superuser` disabled.
 
@@ -495,7 +495,7 @@ PENDING ──artisan accepts──▶ ACCEPTED ──artisan marks on the way�
 - An admin settles a dispute by either **finalizing** the booking or **reopening** it, which sends the job back to the artisan (IN_PROGRESS, job address visible again, dispute reason kept so they know what to fix). When the artisan marks it complete again, the customer gets a fresh confirm/disagree choice, fresh reminders, and a fresh 3-day window.
 - Only an admin can finalize a booking manually. Nobody else can.
 - Finalizing (by any route) erases the job location. Each booking records how it was finalized: confirmed by the customer, automatically, or by an admin.
-- Reminders and auto-finalization are run by `python manage.py process_completed_bookings`, which should be scheduled to run every hour (Windows Task Scheduler or cron).
+- Reminders and auto-finalization are run by `python backend/manage.py process_completed_bookings`, which should be scheduled to run every hour (Windows Task Scheduler or cron).
 
 ### Review Rules
 
@@ -517,7 +517,7 @@ The following rules were not part of the original SRS/design but were establishe
 - **Customers can edit their own profile at any time** (`PATCH /api/v1/customers/customer/details`): username, full name, profile picture, and default location, with no cooldowns. Their **phone number and email can never be changed** through the app; a request that tries to is rejected rather than silently ignored. Usernames must be unique (ignoring capitalisation).
 - **Usernames are private.** Other users never see someone's username (it is half of their login details); they see the full name or business name instead.
 - **Logging in and registering are rate-limited** (10 login attempts per minute and 10 registrations per hour from one address) to slow down password guessing and protect the email quota.
-- **Administrative access has two levels.** A regular web admin has `role=ADMIN` with `is_staff=False` and `is_superuser=False`; a Django super admin is created with `python manage.py createsuperuser`, which also assigns the `ADMIN` role. Only super admins use Django Admin; both levels can use the web admin workspace. Customers and artisans should always be created through registration, which also creates their profile.
+- **Administrative access has two levels.** A regular web admin has `role=ADMIN` with `is_staff=False` and `is_superuser=False`; a Django super admin is created with `python backend/manage.py createsuperuser`, which also assigns the `ADMIN` role. Only super admins use Django Admin; both levels can use the web admin workspace. Customers and artisans should always be created through registration, which also creates their profile.
 - **A service's price change updates every artisan who offers it**, including when edited in Django admin. In Django admin, an artisan's price range and verification status are read-only; artisans are approved or rejected with the "Approve/Reject selected pending artisans" actions, which follow the same pending-only rule as the API.
 - **Re-submitting an unchanged profile value doesn't count as a change**, so it never starts or trips a 6-month cooldown.
 - **Pending and rejected artisans cannot log in.** An artisan can only log in once an admin has approved them.
@@ -562,7 +562,7 @@ Recommendation ranking  → composite score (rating, finalized jobs, distance, r
 
 #### Test Smart Search in Postman
 
-1. Start the API with `python manage.py runserver`. Use `http://127.0.0.1:8000` as the Postman base URL.
+1. Start the API with `python backend/manage.py runserver`. Use `http://127.0.0.1:8000` as the Postman base URL.
 2. Log in as a customer: send `POST {{base_url}}/api/v1/accounts/auth/login` with a raw JSON body:
 
    ```json
@@ -588,7 +588,7 @@ Recommendation ranking  → composite score (rating, finalized jobs, distance, r
 
 5. For a confident match, inspect `service`, `origin`, and `results`. Results are already in composite-rank order and include map/display data (`id`, `name`, `distance_km`, rounded `latitude`/`longitude`, rating, and prices), plus `total_score`, its `scores` breakdown, `completed_jobs`, and `average_response_minutes`. Artisans beyond 10 km are excluded. A vague or ambiguous query returns clarification/suggestion fields instead of ranked results.
 
-The committed end-to-end simulation can also be run without Postman using `python manage.py test ai.tests.SmartSearchRankingTests.test_full_search_location_map_and_composite_ranking_flow`. It uses Django's isolated test database and does not alter development or production data.
+The committed end-to-end simulation can also be run without Postman using `python backend/manage.py test ai.tests.SmartSearchRankingTests.test_full_search_location_map_and_composite_ranking_flow`. It uses Django's isolated test database and does not alter development or production data.
 
 **What counts as a search query:** free text describing either the service or the problem.
 
@@ -620,7 +620,7 @@ The committed end-to-end simulation can also be run without Postman using `pytho
 
 Only **active** services are ever matched. Keywords are managed by admins on each service's page in Django admin; the V1 starter set is English. Hair Stylist (₦6,000–₦50,000) and Barber (₦3,000–₦15,000) are seeded as service-price references, not job quotes; admins can adjust the ranges.
 
-**Search log:** every search is recorded (customer, text, matched service, confidence) so admins can find words customers use that aren't keywords yet (filter on "No match"/"Unsure"), and as training data for V2. Search logs are deleted automatically after **12 months** by `python manage.py purge_search_logs` (schedule it daily).
+**Search log:** every search is recorded (customer, text, matched service, confidence) so admins can find words customers use that aren't keywords yet (filter on "No match"/"Unsure"), and as training data for V2. Search logs are deleted automatically after **12 months** by `python backend/manage.py purge_search_logs` (schedule it daily).
 
 **V1 vs V2:**
 
@@ -904,9 +904,33 @@ The backend work includes:
 - Validation
 - Testing
 
+### Running the Applications Separately
+
+The backend API and frontend are independent applications in separate repositories. For local API development, set `CORS_ALLOWED_ORIGINS` in the backend `.env` to the frontend development origin, normally `http://localhost:5173` and `http://127.0.0.1:5173`. Copy `backend/.env.example` to the backend repository root as `.env` if needed and configure database credentials.
+
+Start the backend from the backend repository root:
+
+```powershell
+pip install -r backend/requirements.txt
+python backend/manage.py migrate
+python backend/manage.py runserver
+```
+
+In another terminal, clone the separate frontend repository and start it:
+
+```powershell
+git clone https://github.com/Phinehastephen/artisan_connect_frontend.git
+cd artisan_connect_frontend
+Copy-Item .env.example .env.local
+npm install
+npm run dev
+```
+
+The frontend `.env.local` sets `VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1`. Vite and Django each run their own development server, and API requests go directly from the browser to Django. For hosted use, set `VITE_API_BASE_URL` to the deployed API base URL and configure the backend's `CORS_ALLOWED_ORIGINS` with the frontend's deployed origin.
+
 ### Local Docker Development
 
-Docker Compose runs PostgreSQL, the Django API, and the built React frontend for local development. It is not a production deployment configuration.
+Docker Compose in this repository runs PostgreSQL and the Django API only. Run the frontend separately from its own repository as described above. This is a local development setup, not a production deployment configuration.
 
 1. Copy `.env.docker.example` to `.env.docker` and replace `SECRET_KEY` and `DB_PASSWORD` with local-only values.
 2. From the repository root, run:
@@ -915,7 +939,7 @@ Docker Compose runs PostgreSQL, the Django API, and the built React frontend for
    docker compose --env-file .env.docker up --build
    ```
 
-3. Open the frontend at `http://localhost:8080`; the API is also available at `http://localhost:8000/api/v1/`.
+3. The API is available at `http://localhost:8000/api/v1/`. Start the frontend separately to use the application.
 4. To create an admin account:
 
    ```powershell
@@ -983,29 +1007,32 @@ Responsible for:
 
 The Django project is organized into independent applications/modules so that each part of the system has a clear responsibility.
 
-A typical structure will follow the pattern:
+A typical structure follows the separate-application layout:
 
 ```text
 artisan_connect/
 │
-├── config/
-├── accounts/
-├── customers/
-├── artisans/
-├── services/
-├── bookings/
-├── reviews/
-├── locations/
-├── notifications/     (in-app inbox)
-├── administration/    (planned)
-├── ai/                (Smart Search; recommendations and price estimation planned)
+├── backend/           (Django REST API application)
+│   ├── config/
+│   ├── accounts/
+│   ├── customers/
+│   ├── artisans/
+│   ├── services/
+│   ├── bookings/
+│   ├── reviews/
+│   ├── locations/
+│   ├── notifications/ (in-app inbox)
+│   ├── ai/            (Smart Search)
+│   ├── recommendations/
+│   ├── manage.py
+│   └── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
 │
-├── manage.py
-├── requirements.txt
 └── README.md
 ```
 
-The exact structure may evolve as implementation progresses, but changes must remain consistent with the approved architecture.
+The React/Vite client is maintained separately in the `Phinehastephen/artisan_connect_frontend` repository.
 
 ---
 
